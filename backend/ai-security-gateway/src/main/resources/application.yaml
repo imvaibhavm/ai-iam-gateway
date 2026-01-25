@@ -3,10 +3,9 @@ spring:
     name: ai-security-gateway
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/ai_iam
-    username: ai
-    password: ai
-    driver-class-name: org.postgresql.Driver
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/ai_iam}
+    username: ${DATABASE_USER:ai}
+    password: ${DATABASE_PASSWORD:ai}
 
   jpa:
     hibernate:
