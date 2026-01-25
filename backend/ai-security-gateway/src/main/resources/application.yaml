@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: ai-security-gateway
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ai_iam
+    username: ai
+    password: ai
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+server:
+  port: 8080
+
+ollama:
+  baseUrl: http://localhost:11434
+  model: llama3.2:1b
+llm:
+  provider: huggingface   # ollama | huggingface
+
+huggingface:
+  token: ${HF_TOKEN:}
+  model: mistralai/Mistral-7B-Instruct-v0.2:featherless-ai
+  baseUrl: https://router.huggingface.co/v1
+
+
+
+

@@ -1,0 +1,33 @@
+# mac
+.DS_Store
+
+# IntelliJ / IDEA
+.idea/
+*.iml
+
+# logs
+*.log
+
+# env files
+.env
+.env.local
+
+# node
+node_modules/
+.next/
+out/
+
+# java
+target/
+*.class
+
+# maven wrapper build
+**/target/
+
+# local db / docker volumes (if any)
+*.db
+
+# secrets
+**/*secret*
+**/*token*
+
