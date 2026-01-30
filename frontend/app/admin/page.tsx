@@ -11,6 +11,19 @@ type AppUser = {
   enabled: boolean;
 };
 
+type AuditLog = {
+  id: string;
+  ts: string;
+  userEmail: string;
+  role: UserRole;
+  intent: string;
+  confidence: number;
+  allowed: boolean;
+  decisionReason: string;
+  piiTypes: string;
+  provider: string;
+};
+
 const roles: UserRole[] = ["INTERN", "ENGINEER", "FINANCE", "ADMIN"];
 
 export default function AdminPage() {
@@ -18,83 +31,131 @@ export default function AdminPage() {
   const router = useRouter();
 
   const [users, setUsers] = useState<AppUser[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [audits, setAudits] = useState<AuditLog[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [loadingAudits, setLoadingAudits] = useState(false);
   const [err, setErr] = useState<string>("");
 
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("INTERN");
 
-  const [isAuthorized, setIsAuthorized] = useState(false);
+  function getEmailOrRedirect(): string | null {
+    const email = localStorage.getItem("aiguard_user_email") || "";
+    if (!email) {
+      router.push("/login");
+      return null;
+    }
+    return email;
+  }
+
+  async function requireAdmin() {
+    const email = getEmailOrRedirect();
+    if (!email) return;
+
+    const res = await fetch(`${backend}/api/user/me`, {
+      headers: { "X-User-Email": email },
+    });
+
+    if (!res.ok) {
+      router.push("/");
+      return;
+    }
+
+    const me = await res.json();
+    if (me.role !== "ADMIN") {
+      router.push("/");
+    }
+  }
 
   async function fetchUsers() {
-    setLoading(true);
+    const email = getEmailOrRedirect();
+    if (!email) return;
+
+    setLoadingUsers(true);
     setErr("");
     try {
-      const res = await fetch(`${backend}/api/admin/users`);
+      const res = await fetch(`${backend}/api/admin/users`, {
+        headers: { "X-User-Email": email },
+      });
+
       if (!res.ok) throw new Error("Failed to load users");
       const data = await res.json();
       setUsers(data);
     } catch (e: any) {
       setErr(e.message || "Error");
     } finally {
-      setLoading(false);
+      setLoadingUsers(false);
     }
   }
 
-  // ✅ Admin guard + initial load
-  useEffect(() => {
-    const email = localStorage.getItem("aiguard_user_email");
-    if (!email) {
-      router.push("/login");
-      return;
+  async function fetchAudits() {
+    const email = getEmailOrRedirect();
+    if (!email) return;
+
+    setLoadingAudits(true);
+    setErr("");
+    try {
+      const res = await fetch(`${backend}/api/admin/audit?limit=100`, {
+        headers: { "X-User-Email": email },
+      });
+
+      if (!res.ok) throw new Error("Failed to load audit logs");
+      const data = await res.json();
+      setAudits(data);
+    } catch (e: any) {
+      setErr(e.message || "Error");
+    } finally {
+      setLoadingAudits(false);
     }
+  }
 
-    (async () => {
-      try {
-        const res = await fetch(`${backend}/api/user/me`, {
-          headers: { "X-User-Email": email },
-        });
-
-        if (!res.ok) {
-          router.push("/");
-          return;
-        }
-
-        const me: AppUser = await res.json();
-
-        if (me.role !== "ADMIN") {
-          router.push("/");
-          return;
-        }
-
-        setIsAuthorized(true);
-        fetchUsers(); // ✅ load users after authorization
-      } catch (e) {
-        router.push("/");
-      }
-    })();
-  }, [router, backend]);
-
-  async function updateRole(email: string, role: UserRole) {
-    await fetch(`${backend}/api/admin/users/${encodeURIComponent(email)}/role/${role}`, {
-      method: "PUT",
+  useEffect(() => {
+    requireAdmin().then(() => {
+      fetchUsers();
+      fetchAudits();
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function updateRole(emailToUpdate: string, role: UserRole) {
+    const email = getEmailOrRedirect();
+    if (!email) return;
+
+    await fetch(`${backend}/api/admin/users/${encodeURIComponent(emailToUpdate)}/role/${role}`, {
+      method: "PUT",
+      headers: { "X-User-Email": email },
+    });
+
     await fetchUsers();
   }
 
-  async function updateEnabled(email: string, enabled: boolean) {
-    await fetch(`${backend}/api/admin/users/${encodeURIComponent(email)}/enabled/${enabled}`, {
-      method: "PUT",
-    });
+  async function updateEnabled(emailToUpdate: string, enabled: boolean) {
+    const email = getEmailOrRedirect();
+    if (!email) return;
+
+    await fetch(
+      `${backend}/api/admin/users/${encodeURIComponent(emailToUpdate)}/enabled/${enabled}`,
+      {
+        method: "PUT",
+        headers: { "X-User-Email": email },
+      }
+    );
+
     await fetchUsers();
   }
 
   async function addUser() {
+    const email = getEmailOrRedirect();
+    if (!email) return;
+
     if (!newEmail.trim()) return;
 
     await fetch(`${backend}/api/admin/users`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-User-Email": email,
+      },
       body: JSON.stringify({
         email: newEmail.trim().toLowerCase(),
         role: newRole,
@@ -107,27 +168,52 @@ export default function AdminPage() {
     await fetchUsers();
   }
 
-  // ✅ avoid UI flash before auth check completes
-  if (!isAuthorized) {
-    return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center">
-        <div className="text-zinc-400">Checking admin access...</div>
-      </div>
-    );
+  function badge(ok: boolean) {
+    return ok ? "border-green-600 text-green-400" : "border-red-600 text-red-400";
   }
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <div className="max-w-5xl mx-auto px-6 py-10">
+      <div className="max-w-6xl mx-auto px-6 py-10">
         <div className="flex items-center justify-between mb-8">
           <h1 className="text-2xl font-bold">Admin Console</h1>
-          <button
-            onClick={fetchUsers}
-            className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700"
-          >
-            Refresh
-          </button>
+
+          <div className="flex gap-2">
+  <button
+    onClick={() => router.push("/")}
+    className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700"
+  >
+    Back to Chat
+  </button>
+
+  <button
+    onClick={() => {
+      localStorage.removeItem("aiguard_user_email");
+      router.push("/login");
+    }}
+    className="px-4 py-2 rounded-xl bg-white text-black font-medium"
+  >
+    Logout
+  </button>
+
+  <button
+    onClick={fetchUsers}
+    className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700"
+  >
+    Refresh Users
+  </button>
+
+  <button
+    onClick={fetchAudits}
+    className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700"
+  >
+    Refresh Audit
+  </button>
+</div>
+
         </div>
+
+        {err && <div className="mb-6 text-red-400">{err}</div>}
 
         {/* Add user */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
@@ -162,12 +248,11 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Users table */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+        {/* Users */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-10">
           <h2 className="text-lg font-semibold mb-4">Users</h2>
 
-          {err && <div className="mb-4 text-red-400">{err}</div>}
-          {loading && <div className="mb-4 text-zinc-400">Loading...</div>}
+          {loadingUsers && <div className="mb-4 text-zinc-400">Loading users...</div>}
 
           <div className="overflow-auto">
             <table className="w-full text-sm">
@@ -200,19 +285,14 @@ export default function AdminPage() {
                     <td className="py-3 pr-4">
                       <button
                         onClick={() => updateEnabled(u.email, !u.enabled)}
-                        className={`px-4 py-2 rounded-xl border ${
-                          u.enabled
-                            ? "border-green-600 text-green-400"
-                            : "border-red-600 text-red-400"
-                        }`}
+                        className={`px-4 py-2 rounded-xl border ${badge(u.enabled)}`}
                       >
                         {u.enabled ? "Enabled" : "Disabled"}
                       </button>
                     </td>
                   </tr>
                 ))}
-
-                {users.length === 0 && !loading && (
+                {users.length === 0 && !loadingUsers && (
                   <tr>
                     <td className="py-6 text-zinc-400" colSpan={3}>
                       No users found.
@@ -224,8 +304,62 @@ export default function AdminPage() {
           </div>
         </div>
 
-        <div className="mt-6 text-zinc-500 text-sm">
-          POC: Admin UI is protected by role-check. Next step: secure admin APIs too (backend 403 for non-admin).
+        {/* Audit Logs */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+          <h2 className="text-lg font-semibold mb-4">Audit Logs (latest 100)</h2>
+
+          {loadingAudits && <div className="mb-4 text-zinc-400">Loading audit logs...</div>}
+
+          <div className="overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="text-zinc-400">
+                <tr className="border-b border-zinc-800">
+                  <th className="text-left py-3 pr-3">Time</th>
+                  <th className="text-left py-3 pr-3">User</th>
+                  <th className="text-left py-3 pr-3">Role</th>
+                  <th className="text-left py-3 pr-3">Intent</th>
+                  <th className="text-left py-3 pr-3">Conf</th>
+                  <th className="text-left py-3 pr-3">Allowed</th>
+                  <th className="text-left py-3 pr-3">Reason</th>
+                  <th className="text-left py-3 pr-3">PII Types</th>
+                  <th className="text-left py-3 pr-3">Provider</th>
+                </tr>
+              </thead>
+              <tbody>
+                {audits.map((a) => (
+                  <tr key={a.id} className="border-b border-zinc-900">
+                    <td className="py-3 pr-3 text-zinc-300">
+                      {a.ts ? new Date(a.ts).toLocaleString() : "-"}
+                    </td>
+                    <td className="py-3 pr-3">{a.userEmail}</td>
+                    <td className="py-3 pr-3">{a.role}</td>
+                    <td className="py-3 pr-3">{a.intent}</td>
+                    <td className="py-3 pr-3">{a.confidence?.toFixed?.(2) ?? "-"}</td>
+                    <td className="py-3 pr-3">
+                      <span className={`px-2 py-1 rounded-lg border ${badge(a.allowed)}`}>
+                        {a.allowed ? "ALLOW" : "DENY"}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-3 text-zinc-300">{a.decisionReason}</td>
+                    <td className="py-3 pr-3 text-zinc-300">{a.piiTypes || "-"}</td>
+                    <td className="py-3 pr-3 text-zinc-300">{a.provider}</td>
+                  </tr>
+                ))}
+
+                {audits.length === 0 && !loadingAudits && (
+                  <tr>
+                    <td className="py-6 text-zinc-400" colSpan={9}>
+                      No audit logs yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-4 text-zinc-500 text-sm">
+            Audit logs prove governance: every request → intent + pii + allow/deny decision stored.
+          </div>
         </div>
       </div>
     </div>

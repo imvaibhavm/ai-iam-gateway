@@ -32,4 +32,8 @@ public class LlmRouter implements LlmClient {
         if ("huggingface".equalsIgnoreCase(provider)) return huggingFaceClient;
         return ollamaClient;
     }
+    public String providerName() {
+    return provider;
+}
+
 }

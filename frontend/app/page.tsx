@@ -8,11 +8,15 @@ type Msg = {
   content: string;
 };
 
+type UserRole = "INTERN" | "ENGINEER" | "FINANCE" | "ADMIN";
+
 export default function Home() {
   const router = useRouter();
   const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
 
   const [userEmail, setUserEmail] = useState<string>("");
+  const [meRole, setMeRole] = useState<UserRole | null>(null);
+
   const [messages, setMessages] = useState<Msg[]>([
     { role: "assistant", content: "Hi 👋 Ask me anything." },
   ]);
@@ -26,8 +30,30 @@ export default function Home() {
       router.push("/login");
       return;
     }
+
     setUserEmail(email);
-  }, [router]);
+
+    // ✅ fetch role
+    (async () => {
+      try {
+        const res = await fetch(`${backend}/api/user/me`, {
+          headers: { "X-User-Email": email },
+        });
+
+        if (!res.ok) {
+          setMeRole(null);
+          return;
+        }
+
+        const me = await res.json();
+        setMeRole(me.role);
+      } catch {
+        setMeRole(null);
+      }
+    })();
+  }, [router, backend]);
+
+  const isAdmin = meRole === "ADMIN";
 
   const scrollToBottom = () => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -36,13 +62,16 @@ export default function Home() {
   async function sendMessage() {
     const trimmed = input.trim();
     if (!trimmed || isStreaming) return;
-    if (!userEmail) return; // not logged in yet
+    if (!userEmail) return;
 
     setInput("");
     setIsStreaming(true);
 
-    // Add user message + assistant placeholder
-    setMessages((prev) => [...prev, { role: "user", content: trimmed }, { role: "assistant", content: "" }]);
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: trimmed },
+      { role: "assistant", content: "" },
+    ]);
     scrollToBottom();
 
     const body = {
@@ -74,7 +103,6 @@ export default function Home() {
 
         buffer += decoder.decode(value, { stream: true });
 
-        // SSE messages separated by \n\n
         const parts = buffer.split("\n\n");
         buffer = parts.pop() ?? "";
 
@@ -108,7 +136,10 @@ export default function Home() {
     } catch (e: any) {
       setMessages((prev) => [
         ...prev.slice(0, -1),
-        { role: "assistant", content: "❌ Error streaming response: " + (e?.message || "unknown") },
+        {
+          role: "assistant",
+          content: "❌ Error streaming response: " + (e?.message || "unknown"),
+        },
       ]);
     } finally {
       setIsStreaming(false);
@@ -123,20 +154,25 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
-      {/* Header */}
       <header className="p-4 border-b border-zinc-800 flex items-center justify-between">
         <div className="flex flex-col">
           <div className="text-lg font-semibold">AI Security Gateway Chat (POC)</div>
-          <div className="text-xs text-zinc-400">{userEmail ? `Logged in as: ${userEmail}` : "Not logged in"}</div>
+          <div className="text-xs text-zinc-400">
+            {userEmail ? `Logged in as: ${userEmail}` : "Not logged in"}
+            {meRole ? ` • Role: ${meRole}` : ""}
+          </div>
         </div>
 
         <div className="flex gap-2">
-          <button
-            onClick={() => router.push("/admin")}
-            className="text-sm px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700"
-          >
-            Admin
-          </button>
+          {/* ✅ Only ADMIN can see Admin button */}
+          {isAdmin && (
+            <button
+              onClick={() => router.push("/admin")}
+              className="text-sm px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700"
+            >
+              Admin
+            </button>
+          )}
 
           <button
             onClick={logout}
@@ -147,7 +183,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Chat */}
       <main className="flex-1 overflow-auto p-4 space-y-4">
         {messages.map((m, idx) => (
           <div
@@ -164,7 +199,6 @@ export default function Home() {
         <div ref={bottomRef} />
       </main>
 
-      {/* Composer */}
       <footer className="p-4 border-t border-zinc-800 flex gap-2">
         <input
           value={input}
