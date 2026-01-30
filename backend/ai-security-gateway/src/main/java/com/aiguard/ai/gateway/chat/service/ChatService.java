@@ -1,25 +1,28 @@
 package com.aiguard.ai.gateway.chat.service;
 
+import com.aiguard.ai.gateway.guard.intent.IntentClassification;
+import com.aiguard.ai.gateway.guard.intent.IntentClassifier;
+import com.aiguard.ai.gateway.guard.policy.PolicyDecision;
 import com.aiguard.ai.gateway.iam.PolicyEngine;
 import com.aiguard.ai.gateway.iam.UserRole;
 import com.aiguard.ai.gateway.iam.entity.AppUser;
 import com.aiguard.ai.gateway.iam.service.AppUserService;
-import com.aiguard.ai.gateway.ollama.OllamaClient;
+import com.aiguard.ai.gateway.llm.LlmRouter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import com.aiguard.ai.gateway.llm.LlmRouter;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.function.Consumer;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatService {
 
-    private final OllamaClient ollamaClient;
-    private final PolicyEngine policyEngine;
+    private final PolicyEngine policyEngine;          // ✅ IAM policy engine
     private final AppUserService userService;
     private final LlmRouter llm;
-
+    private final IntentClassifier intentClassifier;  // ✅ LLM-based intent classifier
 
     /**
      * Non-streaming chat reply
@@ -34,9 +37,19 @@ public class ChatService {
 
         UserRole role = user.getRole();
 
-        if (!policyEngine.isAllowed(role, userMessage)) {
-            return policyEngine.denyMessage(role);
+        // ✅ semantic intent classification (LLM based)
+        IntentClassification ic = intentClassifier.classify(userMessage);
+
+        // ✅ role + intent policy evaluation
+        PolicyDecision decision = policyEngine.evaluate(role, ic);
+
+        if (!decision.allowed()) {
+            return denyMessage(role, ic, decision);
         }
+        log.info("Intent classification: user={} role={} intent={} conf={} reason={}",
+        userEmail, role, ic.intent(), ic.confidence(), ic.reason());
+
+
 
         return llm.generate(userMessage);
     }
@@ -55,12 +68,31 @@ public class ChatService {
 
         UserRole role = user.getRole();
 
-        if (!policyEngine.isAllowed(role, userMessage)) {
-            onToken.accept(policyEngine.denyMessage(role));
+        // ✅ semantic intent classification (LLM based)
+        IntentClassification ic = intentClassifier.classify(userMessage);
+
+        // ✅ role + intent policy evaluation
+        PolicyDecision decision = policyEngine.evaluate(role, ic);
+
+        if (!decision.allowed()) {
+            onToken.accept(denyMessage(role, ic, decision));
             return;
         }
 
-        // Stream from Ollama
+        log.info("Policy decision: user={} role={} allowed={} reason={}",
+        userEmail, role, decision.allowed(), decision.reason());
+
         llm.stream(userMessage, onToken);
+    }
+
+    private String denyMessage(UserRole role, IntentClassification ic, PolicyDecision decision) {
+        return """
+                ⛔ Access denied by policy.
+
+                • Role: %s
+                • Intent: %s
+                • Confidence: %.2f
+                • Reason: %s
+                """.formatted(role, ic.intent(), ic.confidence(), decision.reason());
     }
 }

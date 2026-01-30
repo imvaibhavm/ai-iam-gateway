@@ -1,23 +1,20 @@
-package com.aiguard.ai.gateway.iam;
+package com.aiguard.ai.gateway.guard.policy;
 
 import com.aiguard.ai.gateway.guard.intent.IntentClassification;
 import com.aiguard.ai.gateway.guard.intent.IntentType;
-import com.aiguard.ai.gateway.guard.policy.PolicyDecision;
-import org.springframework.stereotype.Component;
+import com.aiguard.ai.gateway.iam.UserRole;
 
-@Component
 public class PolicyEngine {
 
     public PolicyDecision evaluate(UserRole role, IntentClassification ic) {
 
         IntentType intent = ic.intent();
 
-        // Universal block (all roles)
+        // universal blocks (all roles)
         if (intent == IntentType.SECURITY || intent == IntentType.PROMPT_INJECTION) {
             return PolicyDecision.deny("blocked_security_intent");
         }
 
-        // Admin can do everything
         if (role == UserRole.ADMIN) {
             return PolicyDecision.allow("admin_allow_all");
         }
