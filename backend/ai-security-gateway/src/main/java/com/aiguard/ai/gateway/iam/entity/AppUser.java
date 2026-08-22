@@ -5,7 +5,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "app_users")
+@Table(name = "app_users", uniqueConstraints = @UniqueConstraint(
+        name = "ux_app_users_external_identity", columnNames = {"external_issuer", "external_subject"}))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -22,6 +23,13 @@ public class AppUser {
 
     @Column(nullable = false)
     private String email;
+
+    // Nullable for pre-OIDC and development users. Bound only after a validated OIDC login.
+    @Column(name = "external_issuer")
+    private String externalIssuer;
+
+    @Column(name = "external_subject")
+    private String externalSubject;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

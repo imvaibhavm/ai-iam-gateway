@@ -55,7 +55,7 @@ public class ChatService {
     }
 
     private String processObserved(IdentityContext identity, String message, Consumer<String> streamSink, String requestId) {
-        AppUser user = users.getOrCreate(identity.tenantId(), identity.email(), identity.role());
+        AppUser user = users.requireEnabled(identity.tenantId(), identity.email());
         if (!user.isEnabled()) { audits.save(baseAudit(requestId, identity, user).allowed(false).decisionReason("user_disabled").build()); return emit("⛔ User is disabled.", streamSink); }
 
         rateLimits.check(identity.tenantId(), identity.subject());

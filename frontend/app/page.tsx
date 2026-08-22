@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useIdentityAuth } from "./auth-provider";
 
 type Msg = {
   role: "user" | "assistant";
@@ -12,10 +13,8 @@ type UserRole = "INTERN" | "ENGINEER" | "FINANCE" | "ADMIN";
 
 export default function Home() {
   const router = useRouter();
-  const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
-
+  const auth = useIdentityAuth();
   const [userEmail, setUserEmail] = useState<string>("");
-  const [accessToken, setAccessToken] = useState<string>("");
   const [meRole, setMeRole] = useState<UserRole | null>(null);
 
   const [messages, setMessages] = useState<Msg[]>([
@@ -27,35 +26,33 @@ export default function Home() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const email = localStorage.getItem("aiguard_user_email");
-    const token = localStorage.getItem("aiguard_access_token");
-    if (!email || !token) {
+    const email = localStorage.getItem("aiguard_user_email") || "";
+    const token = localStorage.getItem("aiguard_access_token") || "";
+    if (auth.loading) return;
+    if ((auth.oidc && !auth.authenticated) || (!auth.oidc && (!email || !token))) {
       router.push("/login");
       return;
     }
 
-    setUserEmail(email);
-    setAccessToken(token);
-
+    setUserEmail(email || "authenticated user");
     // ✅ fetch role
     (async () => {
       try {
-        const res = await fetch(`${backend}/api/user/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const res = await auth.apiFetch("/user/me");
 
         if (!res.ok) {
           setMeRole(null);
-          return;
+          router.push("/login"); return;
         }
 
         const me = await res.json();
+        setUserEmail(me.email);
         setMeRole(me.role);
       } catch {
         setMeRole(null);
       }
     })();
-  }, [router, backend]);
+  }, [router, auth]);
 
   const isAdmin = meRole === "ADMIN";
 
@@ -85,9 +82,9 @@ export default function Home() {
 
     try {
       if (agentMode) {
-        const response = await fetch(`${backend}/api/agent/runs`, {
+        const response = await auth.apiFetch("/agent/runs", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: trimmed, agentId: "pr-review-agent", maxSteps: 8 }),
         });
         if (!response.ok) throw new Error("Agent execution failed safely");
@@ -98,9 +95,9 @@ export default function Home() {
         setMessages(prev => { const copy=[...prev]; copy[copy.length-1]={role:"assistant",content:text}; return copy; });
         return;
       }
-      const resp = await fetch(`${backend}/api/chat/stream`, {
+      const resp = await auth.apiFetch("/chat/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
@@ -167,7 +164,7 @@ export default function Home() {
   function logout() {
     localStorage.removeItem("aiguard_user_email");
     localStorage.removeItem("aiguard_access_token");
-    router.push("/login");
+    if (auth.oidc) auth.logout(); else router.push("/login");
   }
 
   return (

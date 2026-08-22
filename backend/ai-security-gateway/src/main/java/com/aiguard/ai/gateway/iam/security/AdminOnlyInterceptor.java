@@ -33,7 +33,7 @@ public class AdminOnlyInterceptor implements HandlerInterceptor {
             return false;
         }
         var identity = identityResolver.require(authentication);
-        AppUser user = userService.getOrCreate(identity.tenantId(), identity.email(), identity.role());
+        AppUser user = userService.requireEnabled(identity.tenantId(), identity.email());
 
         if (!user.isEnabled()) {
             writeError(response, request, 403, "FORBIDDEN", "User disabled");

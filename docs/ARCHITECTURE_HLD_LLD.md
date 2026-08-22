@@ -9,8 +9,8 @@ This service is an identity-aware AI security control plane. Spring Boot is the 
 ```mermaid
 flowchart TB
     Human[Human User] --> UI[Next.js Web UI\nChat and Admin Console]
-    IdP[OIDC Identity Provider\nOkta / Entra / compatible IdP] --> API
-    UI -->|JWT + request| API[Spring Boot AI Security Plane]
+    IdP[OIDC Identity Provider\nAuth0 / Okta / Entra / Keycloak] --> UI
+    UI -->|validated-provider JWT + request| API[Spring Boot AI Security Plane]
 
     subgraph Security[Authoritative AI Security Plane]
       API --> Identity[Identity and Tenant Resolution\nHuman / Service / Agent]
@@ -59,6 +59,21 @@ flowchart LR
     Render -. OTLP .-> Collector[OTEL Collector]
     Collector -. optional .-> LangSmith[LangSmith]
 ```
+
+## Hosted OIDC trust boundary
+
+```mermaid
+flowchart LR
+    IdP[Generic OIDC Provider] -->|Authorization Code + PKCE| SPA[Next.js SPA]
+    SPA -->|Bearer access token| ResourceServer[Spring Security Resource Server]
+    ResourceServer -->|signature + expiry + issuer + audience valid| Mapper[Configurable claims mapper]
+    Mapper --> Resolver[IdentityResolver]
+    Resolver --> Users[(PostgreSQL / Neon app_users)]
+    Users -->|authoritative tenant, enabled, role| Context[IdentityContext]
+    Context --> PDP[ABAC / ReBAC / PDP]
+```
+
+OIDC claims provide authenticated identity attributes, not authorization decisions. The first hosted login binds one pre-provisioned, unambiguous email record to the validated `(issuer, subject)`. Cross-tenant assertions, disabled users and unknown mappings fail closed. Production SPA access tokens remain in SDK-managed memory and are never persisted by this application.
 
 Production provider priority is `cloudflare, openrouter, gemini, huggingface, ollama`. Only healthy, policy-eligible providers participate. Local-only obligations exclude every cloud provider. Local development explicitly uses Ollama first.
 

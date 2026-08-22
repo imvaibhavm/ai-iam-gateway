@@ -16,6 +16,17 @@ server:
   port: 8080
 
 security:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+  oidc:
+    enabled: ${OIDC_ENABLED:false}
+    issuer-uri: ${OIDC_ISSUER_URI:}
+    audience: ${OIDC_AUDIENCE:}
+    email-claim: ${OIDC_EMAIL_CLAIM:email}
+    groups-claim: ${OIDC_GROUPS_CLAIM:groups}
+    tenant-claim: ${OIDC_TENANT_CLAIM:https://aiguard.example/tenant_id}
+    department-claim: ${OIDC_DEPARTMENT_CLAIM:https://aiguard.example/department}
+    clearance-claim: ${OIDC_CLEARANCE_CLAIM:https://aiguard.example/clearance}
   jwt:
     # At least 32 bytes. Override in every deployed environment.
     secret: ${JWT_SECRET:local-development-secret-change-me-32-bytes}

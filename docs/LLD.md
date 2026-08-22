@@ -11,7 +11,7 @@ flowchart LR
     end
 
     subgraph API[Spring Boot API]
-      Security[JWT resource server]
+      Security[Generic OIDC JWT resource server]
       Identity[IdentityResolver]
       ChatController[ChatController]
       AgentController[Agent controllers]
@@ -62,7 +62,7 @@ flowchart LR
 
 | Package | Responsibility | Key types |
 |---|---|---|
-| `identity` | Convert validated JWT claims into server-authoritative identity and delegation context | `IdentityResolver`, `IdentityContext`, `DelegationChain`, `DevTokenController` |
+| `identity` | Normalize validated OIDC claims, reconcile them to server-authoritative local identity and preserve delegation context | `ExternalIdentityClaimsMapper`, `IdentityResolver`, `IdentityContext`, `DelegationChain`, `DevTokenController` |
 | `iam` | Users, roles, ABAC/ReBAC checks and authoritative policy evaluation | `PolicyEngine`, `RelationshipAuthorizer`, `AppUserService` |
 | `guard.pii` | Deterministic PII, secret and credential detection plus masking | `RegexPiiDetector`, `PiiResult`, `PiiEntity` |
 | `guard.intent` | Deterministic workload/domain classification | `RuleBasedIntentClassifier`, `IntentClassification` |
@@ -89,6 +89,7 @@ classDiagram
       +type IdentityType
       +delegatedBy String
       +scopes Set~String~
+      +groups Set~String~
       +attributes Map~String,String~
     }
     class DelegationChain {

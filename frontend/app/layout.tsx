@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { IdentityAuthProvider } from "./auth-provider";
 
 export const metadata: Metadata = {
   title: "AI Security Gateway",
@@ -14,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        {children}
+        <IdentityAuthProvider>{children}</IdentityAuthProvider>
       </body>
     </html>
   );

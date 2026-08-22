@@ -2,12 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useIdentityAuth } from "../auth-provider";
 
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
-  const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
+  const auth = useIdentityAuth();
 
   async function login() {
     const e = email.trim().toLowerCase();
@@ -15,7 +16,7 @@ export default function LoginPage() {
 
     setError("");
     try {
-      const response = await fetch(`${backend}/api/auth/dev-token`, {
+      const response = await auth.apiFetch("/auth/dev-token", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: e, tenantId: "default" }),
       });
@@ -33,9 +34,13 @@ export default function LoginPage() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center px-4">
       <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-8">
         <h1 className="text-2xl font-bold mb-2">Login</h1>
-        <p className="text-zinc-400 mb-6">
-          Enter your email to access AI Security Gateway Chat.
-        </p>
+        <p className="text-zinc-400 mb-6">{auth.oidc
+          ? "Authenticate with the configured enterprise identity provider."
+          : "Enter your email for explicit local development authentication."}</p>
+
+        {auth.oidc ? <button onClick={() => auth.login()}
+          className="block text-center w-full bg-white text-black px-4 py-3 rounded-xl font-medium"
+        >Login with Auth0</button> : <>
 
         <input
           value={email}
@@ -51,11 +56,12 @@ export default function LoginPage() {
         >
           Continue
         </button>
+        </>}
 
         {error && <div className="mt-4 text-sm text-red-400">{error}</div>}
 
         <div className="mt-4 text-xs text-zinc-500">
-          Local development login. Production uses your configured OIDC identity provider.
+          {auth.oidc ? "Hosted OIDC mode · Authorization Code Flow with PKCE" : "Development JWT mode · Not for production"}
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useIdentityAuth } from "../auth-provider";
 
 type UserRole = "INTERN" | "ENGINEER" | "FINANCE" | "ADMIN";
 
@@ -56,8 +57,8 @@ function approvalTarget(approval: Approval) {
 const roles: UserRole[] = ["INTERN", "ENGINEER", "FINANCE", "ADMIN"];
 
 export default function AdminPage() {
-  const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
   const router = useRouter();
+  const auth = useIdentityAuth();
 
   const [users, setUsers] = useState<AppUser[]>([]);
   const [audits, setAudits] = useState<AuditLog[]>([]);
@@ -74,6 +75,7 @@ export default function AdminPage() {
   const [newRole, setNewRole] = useState<UserRole>("INTERN");
 
   function getEmailOrRedirect(): string | null {
+    if (auth.oidc) return "oidc-session";
     const email = localStorage.getItem("aiguard_user_email") || "";
     if (!email) {
       router.push("/login");
@@ -82,18 +84,11 @@ export default function AdminPage() {
     return email;
   }
 
-  function authHeaders(): Record<string, string> {
-    const token = localStorage.getItem("aiguard_access_token") || "";
-    return { Authorization: `Bearer ${token}` };
-  }
-
   async function requireAdmin() {
     const email = getEmailOrRedirect();
     if (!email) return;
 
-    const res = await fetch(`${backend}/api/user/me`, {
-      headers: authHeaders(),
-    });
+    const res = await auth.apiFetch("/user/me");
 
     if (!res.ok) {
       router.push("/");
@@ -113,9 +108,7 @@ export default function AdminPage() {
     setLoadingUsers(true);
     setErr("");
     try {
-      const res = await fetch(`${backend}/api/admin/users`, {
-        headers: authHeaders(),
-      });
+      const res = await auth.apiFetch("/admin/users");
 
       if (!res.ok) throw new Error("Failed to load users");
       const data = await res.json();
@@ -134,9 +127,7 @@ export default function AdminPage() {
     setLoadingAudits(true);
     setErr("");
     try {
-      const res = await fetch(`${backend}/api/admin/audit?limit=100`, {
-        headers: authHeaders(),
-      });
+      const res = await auth.apiFetch("/admin/audit?limit=100");
 
       if (!res.ok) throw new Error("Failed to load audit logs");
       const data = await res.json();
@@ -153,11 +144,11 @@ export default function AdminPage() {
     if (!email) return;
     try {
       const [providerResponse, summaryResponse, runsResponse, approvalsResponse, approvalHistoryResponse] = await Promise.all([
-        fetch(`${backend}/api/admin/providers`, { headers: authHeaders() }),
-        fetch(`${backend}/api/admin/security-events/summary`, { headers: authHeaders() }),
-        fetch(`${backend}/api/agent/runs`, { headers: authHeaders() }),
-        fetch(`${backend}/api/admin/approvals`, { headers: authHeaders() }),
-        fetch(`${backend}/api/admin/approvals/history`, { headers: authHeaders() }),
+        auth.apiFetch("/admin/providers"),
+        auth.apiFetch("/admin/security-events/summary"),
+        auth.apiFetch("/agent/runs"),
+        auth.apiFetch("/admin/approvals"),
+        auth.apiFetch("/admin/approvals/history"),
       ]);
       if (!providerResponse.ok || !summaryResponse.ok || !runsResponse.ok || !approvalsResponse.ok || !approvalHistoryResponse.ok) {
         throw new Error("Failed to load security-plane status");
@@ -185,9 +176,8 @@ export default function AdminPage() {
     const email = getEmailOrRedirect();
     if (!email) return;
 
-    await fetch(`${backend}/api/admin/users/${encodeURIComponent(emailToUpdate)}/role/${role}`, {
+    await auth.apiFetch(`/admin/users/${encodeURIComponent(emailToUpdate)}/role/${role}`, {
       method: "PUT",
-      headers: authHeaders(),
     });
 
     await fetchUsers();
@@ -197,11 +187,10 @@ export default function AdminPage() {
     const email = getEmailOrRedirect();
     if (!email) return;
 
-    await fetch(
-      `${backend}/api/admin/users/${encodeURIComponent(emailToUpdate)}/enabled/${enabled}`,
+    await auth.apiFetch(
+      `/admin/users/${encodeURIComponent(emailToUpdate)}/enabled/${enabled}`,
       {
         method: "PUT",
-        headers: authHeaders(),
       }
     );
 
@@ -214,11 +203,10 @@ export default function AdminPage() {
 
     if (!newEmail.trim()) return;
 
-    await fetch(`${backend}/api/admin/users`, {
+    await auth.apiFetch("/admin/users", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(),
       },
       body: JSON.stringify({
         email: newEmail.trim().toLowerCase(),
@@ -233,8 +221,8 @@ export default function AdminPage() {
   }
 
   async function decideApproval(id: string, decision: "approve" | "reject") {
-    const res = await fetch(`${backend}/api/admin/approvals/${id}/${decision}`, {
-      method: "POST", headers: authHeaders(),
+    const res = await auth.apiFetch(`/admin/approvals/${id}/${decision}`, {
+      method: "POST",
     });
     if (!res.ok) setErr(`Approval ${decision} failed safely`);
     await fetchSecurityPlane();
@@ -262,7 +250,7 @@ export default function AdminPage() {
     onClick={() => {
       localStorage.removeItem("aiguard_user_email");
       localStorage.removeItem("aiguard_access_token");
-      router.push("/login");
+      if (auth.oidc) auth.logout(); else router.push("/login");
     }}
     className="px-4 py-2 rounded-xl bg-white text-black font-medium"
   >

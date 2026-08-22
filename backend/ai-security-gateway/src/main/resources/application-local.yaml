@@ -1,6 +1,8 @@
 security:
+  oidc:
+    enabled: ${OIDC_ENABLED:false}
   jwt:
-    dev-token-enabled: true
+    dev-token-enabled: ${DEV_TOKEN_ENABLED:true}
 
 gateway:
   preferred-provider: ollama
