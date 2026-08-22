@@ -37,6 +37,30 @@ ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS model varchar(255);
 ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS routing_reason varchar(255);
 ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS policy_version varchar(255);
 
-UPDATE audit_log SET tenant_id = COALESCE(tenant_id, 'default');
+-- Hibernate may have already created some primitive-backed columns without a
+-- default before this migration ran. Backfill that partially migrated state
+-- before enforcing the entity's NOT NULL contract.
+ALTER TABLE audit_log ALTER COLUMN estimated_cost_usd SET DEFAULT 0;
+ALTER TABLE audit_log ALTER COLUMN input_tokens SET DEFAULT 0;
+ALTER TABLE audit_log ALTER COLUMN latency_ms SET DEFAULT 0;
+ALTER TABLE audit_log ALTER COLUMN output_redacted SET DEFAULT false;
+ALTER TABLE audit_log ALTER COLUMN output_tokens SET DEFAULT 0;
+ALTER TABLE audit_log ALTER COLUMN provider_succeeded SET DEFAULT false;
+
+UPDATE audit_log
+SET tenant_id = COALESCE(tenant_id, 'default'),
+    estimated_cost_usd = COALESCE(estimated_cost_usd, 0),
+    input_tokens = COALESCE(input_tokens, 0),
+    latency_ms = COALESCE(latency_ms, 0),
+    output_redacted = COALESCE(output_redacted, false),
+    output_tokens = COALESCE(output_tokens, 0),
+    provider_succeeded = COALESCE(provider_succeeded, false);
+
+ALTER TABLE audit_log ALTER COLUMN estimated_cost_usd SET NOT NULL;
+ALTER TABLE audit_log ALTER COLUMN input_tokens SET NOT NULL;
+ALTER TABLE audit_log ALTER COLUMN latency_ms SET NOT NULL;
+ALTER TABLE audit_log ALTER COLUMN output_redacted SET NOT NULL;
+ALTER TABLE audit_log ALTER COLUMN output_tokens SET NOT NULL;
+ALTER TABLE audit_log ALTER COLUMN provider_succeeded SET NOT NULL;
 
 COMMIT;
