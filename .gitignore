@@ -33,6 +33,7 @@ target/
 __pycache__/
 *.egg-info/
 
-# secrets
-**/*secret*
-**/*token*
+# Local secret files. Source files such as DevTokenController.java must remain tracked.
+*.secret
+*.secrets
+*.token
