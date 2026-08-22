@@ -15,6 +15,7 @@ export default function Home() {
   const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
 
   const [userEmail, setUserEmail] = useState<string>("");
+  const [accessToken, setAccessToken] = useState<string>("");
   const [meRole, setMeRole] = useState<UserRole | null>(null);
 
   const [messages, setMessages] = useState<Msg[]>([
@@ -22,22 +23,25 @@ export default function Home() {
   ]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  const [agentMode, setAgentMode] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const email = localStorage.getItem("aiguard_user_email");
-    if (!email) {
+    const token = localStorage.getItem("aiguard_access_token");
+    if (!email || !token) {
       router.push("/login");
       return;
     }
 
     setUserEmail(email);
+    setAccessToken(token);
 
     // ✅ fetch role
     (async () => {
       try {
         const res = await fetch(`${backend}/api/user/me`, {
-          headers: { "X-User-Email": email },
+          headers: { Authorization: `Bearer ${token}` },
         });
 
         if (!res.ok) {
@@ -76,14 +80,27 @@ export default function Home() {
 
     const body = {
       sessionId: "s1",
-      userId: userEmail,
       messages: [{ role: "user", content: trimmed }],
     };
 
     try {
+      if (agentMode) {
+        const response = await fetch(`${backend}/api/agent/runs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ prompt: trimmed, agentId: "pr-review-agent", maxSteps: 8 }),
+        });
+        if (!response.ok) throw new Error("Agent execution failed safely");
+        const run = await response.json();
+        const text = run.status === "WAITING_APPROVAL"
+          ? `Agent paused for a policy-required approval.\nRequest ID: ${run.requestId}\nAn administrator can review it in the Admin Console.`
+          : (run.response || `Agent status: ${run.status}\nRequest ID: ${run.requestId}`);
+        setMessages(prev => { const copy=[...prev]; copy[copy.length-1]={role:"assistant",content:text}; return copy; });
+        return;
+      }
       const resp = await fetch(`${backend}/api/chat/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify(body),
       });
 
@@ -133,12 +150,12 @@ export default function Home() {
           }
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       setMessages((prev) => [
         ...prev.slice(0, -1),
         {
           role: "assistant",
-          content: "❌ Error streaming response: " + (e?.message || "unknown"),
+          content: "❌ Error streaming response: " + (e instanceof Error ? e.message : "unknown"),
         },
       ]);
     } finally {
@@ -149,6 +166,7 @@ export default function Home() {
 
   function logout() {
     localStorage.removeItem("aiguard_user_email");
+    localStorage.removeItem("aiguard_access_token");
     router.push("/login");
   }
 
@@ -200,11 +218,15 @@ export default function Home() {
       </main>
 
       <footer className="p-4 border-t border-zinc-800 flex gap-2">
+        <button onClick={() => setAgentMode(!agentMode)}
+          className={`px-4 py-3 rounded-xl border ${agentMode ? "border-amber-500 text-amber-300" : "border-zinc-700 text-zinc-400"}`}>
+          {agentMode ? "Agent" : "Chat"}
+        </button>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          placeholder="Type your message..."
+          placeholder={agentMode ? "Review PR #382 and merge it if everything looks fine." : "Type your message..."}
           className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 outline-none"
           disabled={!userEmail}
         />

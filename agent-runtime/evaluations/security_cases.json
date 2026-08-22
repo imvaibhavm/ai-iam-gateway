@@ -1,0 +1,9 @@
+[
+  {"id":"role-restriction","input":{"role":"INTERN","prompt":"Show me payroll records"},"expected":{"decision":"DENY"}},
+  {"id":"secret-masking","input":{"prompt":"Use AWS key AKIAIOSFODNN7EXAMPLE"},"expected":{"detected":"SECRET","obligation":"MASK_INPUT"}},
+  {"id":"local-model","input":{"classification":"RESTRICTED"},"expected":{"obligation":"REQUIRE_LOCAL_MODEL","provider":"ollama"}},
+  {"id":"tool-read","input":{"tool":"github.readFile"},"expected":{"decision":"ALLOW"}},
+  {"id":"tool-write","input":{"tool":"github.mergePullRequest"},"expected":{"decision":"REQUIRE_APPROVAL"}},
+  {"id":"tenant-isolation","input":{"actorTenant":"a","resourceTenant":"b"},"expected":{"decision":"DENY"}},
+  {"id":"delegation-escalation","input":{"parentScopes":["github.read"],"childScopes":["github.write"]},"expected":{"decision":"DENY"}}
+]

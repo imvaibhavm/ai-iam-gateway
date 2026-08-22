@@ -17,6 +17,9 @@ public class AuditLog {
 
     private Instant ts;
 
+    private String requestId;
+    private String tenantId;
+
     private String userEmail;
 
     @Enumerated(EnumType.STRING)
@@ -32,4 +35,13 @@ public class AuditLog {
     private String piiTypes; // "EMAIL,PHONE,UUID"
 
     private String provider; // huggingface/ollama
+    private String model;
+    private String routingReason;
+    private long latencyMs;
+    private long inputTokens;
+    private long outputTokens;
+    private double estimatedCostUsd;
+    private String policyVersion;
+    private boolean outputRedacted;
+    private boolean providerSucceeded;
 }

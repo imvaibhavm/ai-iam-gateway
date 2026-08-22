@@ -26,8 +26,13 @@ target/
 
 # local db / docker volumes (if any)
 *.db
+*.sqlite
+*.sqlite-*
+.venv/
+.pytest_cache/
+__pycache__/
+*.egg-info/
 
 # secrets
 **/*secret*
 **/*token*
-

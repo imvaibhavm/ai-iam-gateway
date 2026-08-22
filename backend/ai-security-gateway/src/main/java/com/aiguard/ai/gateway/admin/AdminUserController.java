@@ -8,6 +8,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.aiguard.ai.gateway.identity.IdentityResolver;
+import org.springframework.security.core.Authentication;
 
 @RestController
 @RequestMapping("/api/admin/users")
@@ -15,25 +17,26 @@ import java.util.List;
 public class AdminUserController {
 
     private final AppUserService userService;
+    private final IdentityResolver identityResolver;
 
     @GetMapping
-    public List<AppUser> list() {
-        return userService.listUsers();
+    public List<AppUser> list(Authentication auth) {
+        return userService.listUsers(identityResolver.require(auth).tenantId());
     }
 
     @PostMapping
-    public AppUser upsert(@RequestBody UpsertUserRequest req) {
+    public AppUser upsert(@RequestBody UpsertUserRequest req, Authentication auth) {
         boolean enabled = req.enabled() == null || req.enabled();
-        return userService.upsertUser(req.email(), req.role(), enabled);
+        return userService.upsertUser(identityResolver.require(auth).tenantId(), req.email(), req.role(), enabled);
     }
 
     @PutMapping("/{email}/role/{role}")
-    public AppUser updateRole(@PathVariable String email, @PathVariable String role) {
-        return userService.updateRole(email, UserRole.valueOf(role.toUpperCase()));
+    public AppUser updateRole(@PathVariable String email, @PathVariable String role, Authentication auth) {
+        return userService.updateRole(identityResolver.require(auth).tenantId(), email, UserRole.valueOf(role.toUpperCase()));
     }
 
     @PutMapping("/{email}/enabled/{enabled}")
-    public AppUser updateEnabled(@PathVariable String email, @PathVariable boolean enabled) {
-        return userService.updateEnabled(email, enabled);
+    public AppUser updateEnabled(@PathVariable String email, @PathVariable boolean enabled, Authentication auth) {
+        return userService.updateEnabled(identityResolver.require(auth).tenantId(), email, enabled);
     }
 }

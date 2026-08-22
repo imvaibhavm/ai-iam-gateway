@@ -1,0 +1,12 @@
+security:
+  jwt:
+    dev-token-enabled: true
+
+gateway:
+  preferred-provider: ollama
+  # Local fallback stays local unless explicitly overridden.
+  allow-cloud-fallback: false
+
+ollama:
+  baseUrl: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: ${OLLAMA_MODEL:llama3.2:1b}

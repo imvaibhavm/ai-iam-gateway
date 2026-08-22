@@ -11,12 +11,18 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  redis:
-    image: redis:7-alpine
-    container_name: ai_iam_redis
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.132.0
+    profiles: ["observability"]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-ai-security-gateway}
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
     ports:
-      - "6379:6379"
+      - "4317:4317"
+      - "4318:4318"
 
 volumes:
   postgres_data:
-

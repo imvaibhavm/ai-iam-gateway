@@ -15,6 +15,12 @@ public class AppUser {
 
     @Id
     @Column(nullable = false, unique = true)
+    private String id;
+
+    @Column(nullable = false)
+    private String tenantId;
+
+    @Column(nullable = false)
     private String email;
 
     @Enumerated(EnumType.STRING)

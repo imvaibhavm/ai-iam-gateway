@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import com.aiguard.ai.gateway.llm.LlmClient;
+import com.aiguard.ai.gateway.provider.*;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -13,10 +13,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.function.Consumer;
 
 @Component
-public class OllamaClient implements LlmClient {
+public class OllamaClient implements ModelProvider {
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper mapper = new ObjectMapper();
@@ -27,15 +28,27 @@ public class OllamaClient implements LlmClient {
     @Value("${ollama.model}")
     private String model;
 
-    @Override
-public String generate(String userMessage) {
-    return chat(userMessage);
-}
-
-@Override
-public void stream(String userMessage, Consumer<String> onToken) {
-    chatStream(userMessage, onToken);
-}
+    @Override public String providerId() { return "ollama"; }
+    @Override public String modelId() { return model; }
+    @Override public boolean cloud() { return false; }
+    @Override public ProviderHealth health() { return ProviderHealth.up(); }
+    @Override public ModelResponse generate(ModelRequest request) {
+        long start = System.nanoTime();
+        String content = chat(request.prompt());
+        if (content.startsWith("❌")) throw new IllegalStateException(content);
+        return response(content, start);
+    }
+    @Override public ModelResponse stream(ModelRequest request, Consumer<String> onToken) {
+        long start = System.nanoTime();
+        StringBuilder full = new StringBuilder();
+        chatStream(request.prompt(), token -> { full.append(token); onToken.accept(token); });
+        if (full.toString().startsWith("❌")) throw new IllegalStateException(full.toString());
+        return response(full.toString(), start);
+    }
+    private ModelResponse response(String content, long start) {
+        return new ModelResponse(content, providerId(), model, 0, 0,
+                (System.nanoTime() - start) / 1_000_000, 0.0);
+    }
 
 
     public String chat(String userMessage) {
@@ -53,6 +66,7 @@ public void stream(String userMessage, Consumer<String> onToken) {
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/api/chat"))
+                    .timeout(Duration.ofSeconds(45))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
@@ -86,6 +100,7 @@ public void stream(String userMessage, Consumer<String> onToken) {
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/api/chat"))
+                    .timeout(Duration.ofSeconds(45))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();

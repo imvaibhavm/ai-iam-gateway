@@ -15,17 +15,69 @@ spring:
 server:
   port: 8080
 
+security:
+  jwt:
+    # At least 32 bytes. Override in every deployed environment.
+    secret: ${JWT_SECRET:local-development-secret-change-me-32-bytes}
+    issuer: ${JWT_ISSUER:ai-security-gateway}
+    dev-token-enabled: ${DEV_TOKEN_ENABLED:false}
+
+gateway:
+  policy-version: ${POLICY_VERSION:2026-01}
+  rate-limit-per-minute: ${RATE_LIMIT_PER_MINUTE:30}
+  default-token-budget: ${DEFAULT_TOKEN_BUDGET:4096}
+  provider-timeout-seconds: ${PROVIDER_TIMEOUT_SECONDS:45}
+  # Deployed/default provider. Local development overrides this in application-local.yaml.
+  preferred-provider: ${PREFERRED_MODEL_PROVIDER:huggingface}
+  allow-cloud-fallback: ${ALLOW_CLOUD_FALLBACK:true}
+  observability:
+    # JSON security events can be collected by an OTEL Collector or SIEM log forwarder.
+    security-event-log-enabled: ${SECURITY_EVENT_LOG_ENABLED:true}
+    recent-event-capacity: ${SECURITY_EVENT_CAPACITY:500}
+    langsmith-enabled: ${AI_OBSERVABILITY_LANGSMITH_ENABLED:false}
+
+agent-runtime:
+  base-url: ${AGENT_RUNTIME_URL:http://localhost:8090}
+  shared-token: ${AGENT_RUNTIME_TOKEN:local-agent-runtime-token-change-me}
+  timeout-seconds: ${AGENT_RUNTIME_TIMEOUT_SECONDS:60}
+
 ollama:
-  baseUrl: http://localhost:11434
-  model: llama3.2:1b
-llm:
-  provider: huggingface   # ollama | huggingface
+  baseUrl: ${OLLAMA_BASE_URL:http://localhost:11434}
+  model: ${OLLAMA_MODEL:llama3.2:1b}
 
 huggingface:
   token: ${HF_TOKEN:}
   model: mistralai/Mistral-7B-Instruct-v0.2:featherless-ai
   baseUrl: https://router.huggingface.co/v1
 
+openai:
+  token: ${OPENAI_API_KEY:}
+  model: ${OPENAI_MODEL:gpt-4.1-mini}
+  baseUrl: ${OPENAI_BASE_URL:https://api.openai.com/v1}
 
+anthropic:
+  token: ${ANTHROPIC_API_KEY:}
+  model: ${ANTHROPIC_MODEL:claude-3-5-haiku-latest}
+  baseUrl: ${ANTHROPIC_BASE_URL:https://api.anthropic.com/v1}
 
+gemini:
+  token: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-2.0-flash}
+  baseUrl: ${GEMINI_BASE_URL:https://generativelanguage.googleapis.com/v1beta/openai}
 
+management:
+  tracing:
+    enabled: ${AI_OBSERVABILITY_ENABLED:false}
+    sampling:
+      probability: ${AI_OBSERVABILITY_SAMPLE_RATE:1.0}
+  otlp:
+    tracing:
+      # Point this at an OTEL Collector. The collector may fan out to LangSmith and other sinks.
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://localhost:4318/v1/traces}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  observations:
+    key-values:
+      service.name: ${spring.application.name}

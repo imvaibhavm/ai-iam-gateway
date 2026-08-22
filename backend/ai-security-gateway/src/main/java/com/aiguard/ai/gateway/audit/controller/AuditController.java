@@ -8,6 +8,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.aiguard.ai.gateway.identity.IdentityResolver;
+import org.springframework.security.core.Authentication;
 
 @RestController
 @RequestMapping("/api/admin/audit")
@@ -15,20 +17,20 @@ import java.util.List;
 public class AuditController {
 
     private final AuditLogRepository repo;
+    private final IdentityResolver identityResolver;
 
     /**
      * Latest audit logs (default last 100)
      */
     @GetMapping
-    public List<AuditLog> latest(@RequestParam(defaultValue = "100") int limit) {
+    public List<AuditLog> latest(@RequestParam(defaultValue = "100") int limit, Authentication auth) {
 
         int safeLimit = Math.min(Math.max(limit, 1), 500);
 
-        return repo.findAll(PageRequest.of(
+        return repo.findByTenantId(identityResolver.require(auth).tenantId(), PageRequest.of(
                         0,
                         safeLimit,
                         Sort.by(Sort.Direction.DESC, "ts")
-                ))
-                .getContent();
+                ));
     }
 }

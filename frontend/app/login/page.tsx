@@ -6,13 +6,27 @@ import { useState } from "react";
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
 
-  function login() {
+  async function login() {
     const e = email.trim().toLowerCase();
     if (!e) return;
 
-    localStorage.setItem("aiguard_user_email", e);
-    router.push("/");
+    setError("");
+    try {
+      const response = await fetch(`${backend}/api/auth/dev-token`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: e, tenantId: "default" }),
+      });
+      if (!response.ok) throw new Error("Authentication failed");
+      const data: { accessToken: string } = await response.json();
+      localStorage.setItem("aiguard_access_token", data.accessToken);
+      localStorage.setItem("aiguard_user_email", e);
+      router.push("/");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Authentication failed");
+    }
   }
 
   return (
@@ -38,8 +52,10 @@ export default function LoginPage() {
           Continue
         </button>
 
+        {error && <div className="mt-4 text-sm text-red-400">{error}</div>}
+
         <div className="mt-4 text-xs text-zinc-500">
-          POC login only. Later: Google OAuth / Okta / Azure AD.
+          Local development login. Production uses your configured OIDC identity provider.
         </div>
       </div>
     </div>

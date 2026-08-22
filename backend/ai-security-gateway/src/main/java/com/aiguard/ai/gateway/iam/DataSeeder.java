@@ -15,15 +15,18 @@ public class DataSeeder implements CommandLineRunner {
     @Override
     public void run(String... args) {
 
-        seed("admin@aiguard.com", UserRole.ADMIN);
-        seed("intern@aiguard.com", UserRole.INTERN);
-        seed("finance@aiguard.com", UserRole.FINANCE);
-        seed("engineer@aiguard.com", UserRole.ENGINEER);
+        seed("default", "admin@aiguard.com", UserRole.ADMIN);
+        seed("default", "intern@aiguard.com", UserRole.INTERN);
+        seed("default", "finance@aiguard.com", UserRole.FINANCE);
+        seed("default", "engineer@aiguard.com", UserRole.ENGINEER);
     }
 
-    private void seed(String email, UserRole role) {
-        repo.findById(email).orElseGet(() -> repo.save(
+    private void seed(String tenant, String email, UserRole role) {
+        String id = tenant + "|" + email;
+        repo.findById(id).orElseGet(() -> repo.save(
                 AppUser.builder()
+                        .id(id)
+                        .tenantId(tenant)
                         .email(email)
                         .role(role)
                         .enabled(true)

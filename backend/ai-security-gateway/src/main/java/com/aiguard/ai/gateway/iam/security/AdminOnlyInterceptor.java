@@ -4,6 +4,7 @@ import com.aiguard.ai.gateway.common.ApiErrorResponse;
 import com.aiguard.ai.gateway.iam.UserRole;
 import com.aiguard.ai.gateway.iam.entity.AppUser;
 import com.aiguard.ai.gateway.iam.service.AppUserService;
+import com.aiguard.ai.gateway.identity.IdentityResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -13,25 +14,26 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.time.Instant;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 @Component
 @RequiredArgsConstructor
 public class AdminOnlyInterceptor implements HandlerInterceptor {
 
     private final AppUserService userService;
+    private final IdentityResolver identityResolver;
     private final ObjectMapper objectMapper; // ✅ Spring injected
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
 
-        String email = request.getHeader("X-User-Email");
-
-        if (email == null || email.isBlank()) {
-            writeError(response, request, 401, "UNAUTHORIZED", "Missing X-User-Email header");
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            writeError(response, request, 401, "UNAUTHORIZED", "Validated JWT required");
             return false;
         }
-
-        AppUser user = userService.getOrCreateDefault(email);
+        var identity = identityResolver.require(authentication);
+        AppUser user = userService.getOrCreate(identity.tenantId(), identity.email(), identity.role());
 
         if (!user.isEnabled()) {
             writeError(response, request, 403, "FORBIDDEN", "User disabled");

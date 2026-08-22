@@ -24,6 +24,24 @@ type AuditLog = {
   provider: string;
 };
 
+type ProviderStatus = {
+  provider: string;
+  model: string;
+  cloud: boolean;
+  available: boolean;
+  reason: string;
+};
+
+type SecuritySummary = {
+  total: number;
+  denied: number;
+  providerFailures: number;
+  outputRedactions: number;
+  byIntent: Record<string, number>;
+};
+type AgentRun = { id:string; requestId:string; tenantId:string; agentId:string; originatingSubject:string; stepCount:number; maxSteps:number; provider?:string; policyResult?:string; status:string };
+type Approval = { id:string; requestId:string; toolName:string; sanitizedArguments:string; reason:string; risk:string };
+
 const roles: UserRole[] = ["INTERN", "ENGINEER", "FINANCE", "ADMIN"];
 
 export default function AdminPage() {
@@ -32,6 +50,10 @@ export default function AdminPage() {
 
   const [users, setUsers] = useState<AppUser[]>([]);
   const [audits, setAudits] = useState<AuditLog[]>([]);
+  const [providers, setProviders] = useState<ProviderStatus[]>([]);
+  const [securitySummary, setSecuritySummary] = useState<SecuritySummary | null>(null);
+  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+  const [approvals, setApprovals] = useState<Approval[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [loadingAudits, setLoadingAudits] = useState(false);
   const [err, setErr] = useState<string>("");
@@ -48,12 +70,17 @@ export default function AdminPage() {
     return email;
   }
 
+  function authHeaders(): Record<string, string> {
+    const token = localStorage.getItem("aiguard_access_token") || "";
+    return { Authorization: `Bearer ${token}` };
+  }
+
   async function requireAdmin() {
     const email = getEmailOrRedirect();
     if (!email) return;
 
     const res = await fetch(`${backend}/api/user/me`, {
-      headers: { "X-User-Email": email },
+      headers: authHeaders(),
     });
 
     if (!res.ok) {
@@ -75,14 +102,14 @@ export default function AdminPage() {
     setErr("");
     try {
       const res = await fetch(`${backend}/api/admin/users`, {
-        headers: { "X-User-Email": email },
+        headers: authHeaders(),
       });
 
       if (!res.ok) throw new Error("Failed to load users");
       const data = await res.json();
       setUsers(data);
-    } catch (e: any) {
-      setErr(e.message || "Error");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Error");
     } finally {
       setLoadingUsers(false);
     }
@@ -96,16 +123,38 @@ export default function AdminPage() {
     setErr("");
     try {
       const res = await fetch(`${backend}/api/admin/audit?limit=100`, {
-        headers: { "X-User-Email": email },
+        headers: authHeaders(),
       });
 
       if (!res.ok) throw new Error("Failed to load audit logs");
       const data = await res.json();
       setAudits(data);
-    } catch (e: any) {
-      setErr(e.message || "Error");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Error");
     } finally {
       setLoadingAudits(false);
+    }
+  }
+
+  async function fetchSecurityPlane() {
+    const email = getEmailOrRedirect();
+    if (!email) return;
+    try {
+      const [providerResponse, summaryResponse, runsResponse, approvalsResponse] = await Promise.all([
+        fetch(`${backend}/api/admin/providers`, { headers: authHeaders() }),
+        fetch(`${backend}/api/admin/security-events/summary`, { headers: authHeaders() }),
+        fetch(`${backend}/api/agent/runs`, { headers: authHeaders() }),
+        fetch(`${backend}/api/admin/approvals`, { headers: authHeaders() }),
+      ]);
+      if (!providerResponse.ok || !summaryResponse.ok || !runsResponse.ok || !approvalsResponse.ok) {
+        throw new Error("Failed to load security-plane status");
+      }
+      setProviders(await providerResponse.json());
+      setSecuritySummary(await summaryResponse.json());
+      setAgentRuns(await runsResponse.json());
+      setApprovals(await approvalsResponse.json());
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Error");
     }
   }
 
@@ -113,6 +162,7 @@ export default function AdminPage() {
     requireAdmin().then(() => {
       fetchUsers();
       fetchAudits();
+      fetchSecurityPlane();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -123,7 +173,7 @@ export default function AdminPage() {
 
     await fetch(`${backend}/api/admin/users/${encodeURIComponent(emailToUpdate)}/role/${role}`, {
       method: "PUT",
-      headers: { "X-User-Email": email },
+      headers: authHeaders(),
     });
 
     await fetchUsers();
@@ -137,7 +187,7 @@ export default function AdminPage() {
       `${backend}/api/admin/users/${encodeURIComponent(emailToUpdate)}/enabled/${enabled}`,
       {
         method: "PUT",
-        headers: { "X-User-Email": email },
+        headers: authHeaders(),
       }
     );
 
@@ -154,7 +204,7 @@ export default function AdminPage() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-User-Email": email,
+        ...authHeaders(),
       },
       body: JSON.stringify({
         email: newEmail.trim().toLowerCase(),
@@ -166,6 +216,14 @@ export default function AdminPage() {
     setNewEmail("");
     setNewRole("INTERN");
     await fetchUsers();
+  }
+
+  async function decideApproval(id: string, decision: "approve" | "reject") {
+    const res = await fetch(`${backend}/api/admin/approvals/${id}/${decision}`, {
+      method: "POST", headers: authHeaders(),
+    });
+    if (!res.ok) setErr(`Approval ${decision} failed safely`);
+    await fetchSecurityPlane();
   }
 
   function badge(ok: boolean) {
@@ -189,6 +247,7 @@ export default function AdminPage() {
   <button
     onClick={() => {
       localStorage.removeItem("aiguard_user_email");
+      localStorage.removeItem("aiguard_access_token");
       router.push("/login");
     }}
     className="px-4 py-2 rounded-xl bg-white text-black font-medium"
@@ -214,6 +273,83 @@ export default function AdminPage() {
         </div>
 
         {err && <div className="mb-6 text-red-400">{err}</div>}
+
+        {/* Security plane overview */}
+        <div className="grid gap-4 md:grid-cols-4 mb-8">
+          {[
+            ["Security events", securitySummary?.total ?? 0],
+            ["Policy denials", securitySummary?.denied ?? 0],
+            ["Provider failures", securitySummary?.providerFailures ?? 0],
+            ["Output redactions", securitySummary?.outputRedactions ?? 0],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+              <div className="text-sm text-zinc-400">{label}</div>
+              <div className="text-3xl font-semibold mt-2">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Model Providers</h2>
+            <button onClick={fetchSecurityPlane} className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm">
+              Refresh status
+            </button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {providers.map((provider) => (
+              <div key={provider.provider} className="rounded-xl border border-zinc-800 bg-zinc-950 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-medium capitalize">{provider.provider}</span>
+                  <span className={`text-xs border rounded-lg px-2 py-1 ${badge(provider.available)}`}>
+                    {provider.available ? "AVAILABLE" : "OFFLINE"}
+                  </span>
+                </div>
+                <div className="text-sm text-zinc-400 mt-2 break-all">{provider.model}</div>
+                <div className="text-xs text-zinc-500 mt-2">
+                  {provider.cloud ? "Cloud" : "Local"} · {provider.reason}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
+          <h2 className="text-lg font-semibold mb-4">Pending Agent Approvals</h2>
+          <div className="grid gap-3">
+            {approvals.map((approval) => (
+              <div key={approval.id} className="rounded-xl border border-amber-700/60 bg-zinc-950 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="text-amber-400 font-medium">{approval.risk}-risk action</div>
+                    <div className="mt-1">{approval.toolName}</div>
+                    <div className="text-xs text-zinc-500 mt-1">Request {approval.requestId}</div>
+                    <div className="text-sm text-zinc-400 mt-2">{approval.sanitizedArguments}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => decideApproval(approval.id, "approve")} className="px-3 py-2 rounded-lg bg-green-700">Approve</button>
+                    <button onClick={() => decideApproval(approval.id, "reject")} className="px-3 py-2 rounded-lg bg-red-800">Reject</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {approvals.length === 0 && <div className="text-zinc-500">No actions are awaiting approval.</div>}
+          </div>
+        </div>
+
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
+          <h2 className="text-lg font-semibold mb-4">Agent Runs</h2>
+          <div className="overflow-auto"><table className="w-full text-xs">
+            <thead className="text-zinc-400"><tr className="border-b border-zinc-800">
+              {["Request ID","Tenant","Agent","Originator","Steps","Provider","Policy","Status"].map(h => <th key={h} className="text-left py-3 pr-3">{h}</th>)}
+            </tr></thead>
+            <tbody>{agentRuns.map(run => <tr key={run.id} className="border-b border-zinc-900">
+              <td className="py-3 pr-3">{run.requestId}</td><td className="pr-3">{run.tenantId}</td><td className="pr-3">{run.agentId}</td>
+              <td className="pr-3">{run.originatingSubject}</td><td className="pr-3">{run.stepCount}/{run.maxSteps}</td>
+              <td className="pr-3">{run.provider || "-"}</td><td className="pr-3">{run.policyResult || "-"}</td><td className="pr-3">{run.status}</td>
+            </tr>)}</tbody>
+          </table></div>
+        </div>
 
         {/* Add user */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">

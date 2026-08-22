@@ -3,9 +3,9 @@ package com.aiguard.ai.gateway.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 
 import java.util.List;
@@ -14,7 +14,7 @@ import java.util.List;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, AgentRuntimeAuthenticationFilter agentFilter) throws Exception {
 
         return http
                 .csrf(csrf -> csrf.disable())
@@ -35,9 +35,12 @@ public class SecurityConfig {
                 }))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .anyRequest().permitAll()
+                        .requestMatchers("/", "/actuator/health", "/api/auth/dev-token").permitAll()
+                        .requestMatchers("/internal/agent/**").permitAll()
+                        .anyRequest().authenticated()
                 )
-                .httpBasic(Customizer.withDefaults())
+                .addFilterBefore(agentFilter, UsernamePasswordAuthenticationFilter.class)
+                .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> {}))
                 .build();
     }
 }
