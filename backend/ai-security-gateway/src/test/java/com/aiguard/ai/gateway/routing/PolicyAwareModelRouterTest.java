@@ -10,11 +10,15 @@ import java.util.function.Consumer;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PolicyAwareModelRouterTest {
-    @Test void sensitiveDataNeverRoutesToCloud() {
+    @Test void secretsNeverRouteToCloud() {
         var router = new PolicyAwareModelRouter(new ProviderRegistry(List.of(provider("openai", true), provider("ollama", false))), "openai", true);
-        var decision = router.select(IntentType.PII);
+        var decision = router.select(IntentType.SECRETS);
         assertEquals("ollama", decision.selected().providerId());
         assertTrue(decision.fallbacks().stream().noneMatch(ModelProvider::cloud));
+    }
+    @Test void maskedPiiMayRemainOnPreferredCloudProvider() {
+        var router = new PolicyAwareModelRouter(new ProviderRegistry(List.of(provider("cloudflare", true), provider("ollama", false))), "cloudflare,ollama", true);
+        assertEquals("cloudflare", router.select(IntentType.PII).selected().providerId());
     }
     @Test void preferredHealthyProviderIsSelected() {
         var router = new PolicyAwareModelRouter(new ProviderRegistry(List.of(provider("openai", true), provider("ollama", false))), "openai", true);

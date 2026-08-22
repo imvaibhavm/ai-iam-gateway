@@ -62,6 +62,18 @@ class PolicyContextTest {
         assertTrue(types.contains(PolicyObligation.Type.LIMIT_COST));
     }
 
+    @Test void detectedPiiIsMaskedButDoesNotRequireLocalInference() {
+        IdentityContext identity = new IdentityContext("intern", "intern@example.com", "tenant-a", UserRole.INTERN);
+        IntentClassification pii = new IntentClassification(IntentType.PII, 1, "deterministic_pii", "N/A");
+        var decision = policy.evaluate(PolicyContext.llm(identity, pii, DataClassification.RESTRICTED));
+        Set<PolicyObligation.Type> types = new HashSet<>();
+        decision.obligations().forEach(value -> types.add(value.type()));
+        assertTrue(decision.allowed());
+        assertTrue(types.contains(PolicyObligation.Type.MASK_INPUT));
+        assertTrue(types.contains(PolicyObligation.Type.INSPECT_OUTPUT));
+        assertFalse(types.contains(PolicyObligation.Type.REQUIRE_LOCAL_MODEL));
+    }
+
     @Test void residencyAttributeIsAnAbacBoundary() {
         IdentityContext identity = new IdentityContext("user-1", "u@example.com", "tenant-a", UserRole.ENGINEER,
                 IdentityType.HUMAN, null, Set.of(), Map.of("region", "eu"));

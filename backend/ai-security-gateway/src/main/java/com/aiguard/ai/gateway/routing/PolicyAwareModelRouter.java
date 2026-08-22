@@ -31,7 +31,7 @@ public class PolicyAwareModelRouter {
     public RoutingDecision select(IntentType intent, PolicyDecision policy) {
         boolean obligationRequiresLocal = policy != null && policy.obligations().stream()
                 .anyMatch(o -> o.type() == PolicyObligation.Type.REQUIRE_LOCAL_MODEL);
-        boolean localOnly = obligationRequiresLocal || intent == IntentType.PII || intent == IntentType.SECRETS;
+        boolean localOnly = obligationRequiresLocal || intent == IntentType.SECRETS;
         List<ModelProvider> eligible = registry.all().stream()
                 .filter(p -> !localOnly || !p.cloud())
                 .filter(p -> p.health().available())

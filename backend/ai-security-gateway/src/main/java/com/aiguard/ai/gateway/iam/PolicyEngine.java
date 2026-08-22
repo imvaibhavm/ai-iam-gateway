@@ -88,7 +88,10 @@ public class PolicyEngine {
                 || context.dataClassification() == DataClassification.RESTRICTED) {
             obligations.add(PolicyObligation.of(PolicyObligation.Type.MASK_INPUT));
         }
-        if (context.dataClassification() == DataClassification.RESTRICTED) {
+        // Deterministically detected PII is masked before policy evaluation and may use an
+        // approved cloud provider. Secrets remain local-only and fail closed.
+        if (context.dataClassification() == DataClassification.RESTRICTED
+                && context.intent().intent() != IntentType.PII) {
             obligations.add(PolicyObligation.of(PolicyObligation.Type.REQUIRE_LOCAL_MODEL));
         }
         if (context.estimatedCostUsd().signum() > 0) {
