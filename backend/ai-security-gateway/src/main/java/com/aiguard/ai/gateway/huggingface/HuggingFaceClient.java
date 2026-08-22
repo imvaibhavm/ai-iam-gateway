@@ -31,7 +31,7 @@ public class HuggingFaceClient implements ModelProvider {
     @Value("${huggingface.baseUrl}")
     private String baseUrl;
 
-    public String generateText(String userMessage) {
+    public String generateText(String userMessage, int maxOutputTokens) {
         try {
             if (token == null || token.isBlank()) {
                 return "❌ HF_TOKEN missing. Set it as environment variable.";
@@ -41,6 +41,7 @@ public class HuggingFaceClient implements ModelProvider {
                     {
                       "model": %s,
                       "stream": false,
+                      "max_tokens": %d,
                       "messages": [
                         {"role":"system","content":"You are a helpful assistant."},
                         {"role":"user","content": %s}
@@ -48,6 +49,7 @@ public class HuggingFaceClient implements ModelProvider {
                     }
                     """.formatted(
                     mapper.writeValueAsString(model),
+                    maxOutputTokens,
                     mapper.writeValueAsString(userMessage)
             );
 
@@ -80,7 +82,7 @@ public class HuggingFaceClient implements ModelProvider {
         }
     }
 
-    public void streamText(String userMessage, Consumer<String> onToken) {
+    public void streamText(String userMessage, int maxOutputTokens, Consumer<String> onToken) {
 
         if (token == null || token.isBlank()) {
             onToken.accept("❌ HF_TOKEN missing. Set it as environment variable.");
@@ -92,6 +94,7 @@ public class HuggingFaceClient implements ModelProvider {
                     {
                       "model": %s,
                       "stream": true,
+                      "max_tokens": %d,
                       "messages": [
                         {"role":"system","content":"You are a helpful assistant."},
                         {"role":"user","content": %s}
@@ -99,6 +102,7 @@ public class HuggingFaceClient implements ModelProvider {
                     }
                     """.formatted(
                     mapper.writeValueAsString(model),
+                    maxOutputTokens,
                     mapper.writeValueAsString(userMessage)
             );
 
@@ -166,14 +170,16 @@ public class HuggingFaceClient implements ModelProvider {
     }
     @Override public ModelResponse generate(ModelRequest request) {
         long start = System.nanoTime();
-        String content = generateText(request.prompt());
+        String content = generateText(request.prompt(), request.maxTokens());
         if (content.startsWith("❌")) throw new IllegalStateException(content);
+        if (content.isBlank()) throw new IllegalStateException("HuggingFace returned an empty completion");
         return response(content, start);
     }
     @Override public ModelResponse stream(ModelRequest request, Consumer<String> onToken) {
         long start = System.nanoTime(); StringBuilder full = new StringBuilder();
-        streamText(request.prompt(), t -> { full.append(t); onToken.accept(t); });
+        streamText(request.prompt(), request.maxTokens(), t -> { full.append(t); onToken.accept(t); });
         if (full.toString().startsWith("❌")) throw new IllegalStateException(full.toString());
+        if (full.isEmpty()) throw new IllegalStateException("HuggingFace returned an empty completion");
         return response(full.toString(), start);
     }
     private ModelResponse response(String content, long start) {
