@@ -7,21 +7,25 @@ import com.aiguard.ai.gateway.guard.policy.*;
 import com.aiguard.ai.gateway.identity.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 import java.util.Map;
 
 @Component
 public class PolicyEngine {
     private final DelegationPolicy delegationPolicy;
     private final RelationshipAuthorizer relationships;
+    private final String policyVersion;
 
     public PolicyEngine() {
-        this(new DelegationPolicy(), new TenantRelationshipAuthorizer());
+        this(new DelegationPolicy(), new TenantRelationshipAuthorizer(), "2026-08-23.4");
     }
 
     @Autowired
-    public PolicyEngine(DelegationPolicy delegationPolicy, RelationshipAuthorizer relationships) {
+    public PolicyEngine(DelegationPolicy delegationPolicy, RelationshipAuthorizer relationships,
+                        @Value("${gateway.policy-version:2026-08-23.4}") String policyVersion) {
         this.delegationPolicy = delegationPolicy;
         this.relationships = relationships;
+        this.policyVersion = policyVersion;
     }
 
     public PolicyDecision evaluate(UserRole role, IntentClassification ic) {
@@ -31,28 +35,28 @@ public class PolicyEngine {
 
     public PolicyDecision evaluate(PolicyContext context) {
         if (context == null || context.identity() == null || context.intent() == null) {
-            return PolicyDecision.deny("invalid_policy_context");
+            return deny("invalid_policy_context", PolicyDecision.Risk.HIGH);
         }
         IdentityContext identity = context.identity();
         if (identity.tenantId() == null || identity.tenantId().isBlank()) {
-            return PolicyDecision.deny("tenant_required");
+            return deny("tenant_required", PolicyDecision.Risk.HIGH);
         }
         DelegationPolicy.Result delegation = delegationPolicy.evaluate(identity, context.action());
-        if (!delegation.allowed()) return PolicyDecision.deny(delegation.reason());
+        if (!delegation.allowed()) return deny(delegation.reason(), PolicyDecision.Risk.HIGH);
         if (!relationships.canAccess(identity, context.action(), context.resource())) {
-            return PolicyDecision.deny("relationship_access_denied");
+            return deny("relationship_access_denied", PolicyDecision.Risk.HIGH);
         }
         String permittedRegion = identity.attributes().get("region");
         if (permittedRegion != null && context.requestedRegion() != null
                 && !permittedRegion.equalsIgnoreCase(context.requestedRegion())) {
-            return PolicyDecision.deny("residency_mismatch");
+            return deny("residency_mismatch", PolicyDecision.Risk.HIGH);
         }
 
         IntentType intent = context.intent().intent();
 
         // Universal block (all roles)
         if (intent == IntentType.SECURITY || intent == IntentType.PROMPT_INJECTION) {
-            return PolicyDecision.deny("blocked_security_intent");
+            return deny("blocked_security_intent", PolicyDecision.Risk.CRITICAL);
         }
 
         // Admin can do everything
@@ -62,19 +66,19 @@ public class PolicyEngine {
 
         // INTERN restrictions
         if (identity.role() == UserRole.INTERN) {
-            if (intent == IntentType.FINANCE) return PolicyDecision.deny("intern_block_finance");
-            if (intent == IntentType.HR) return PolicyDecision.deny("intern_block_hr");
-            if (intent == IntentType.SECRETS) return PolicyDecision.deny("intern_block_secrets");
+            if (intent == IntentType.FINANCE) return deny("intern_block_finance", PolicyDecision.Risk.HIGH);
+            if (intent == IntentType.HR) return deny("intern_block_hr", PolicyDecision.Risk.HIGH);
+            if (intent == IntentType.SECRETS) return deny("intern_block_secrets", PolicyDecision.Risk.CRITICAL);
         }
 
         // FINANCE restrictions
         if (identity.role() == UserRole.FINANCE) {
-            if (intent == IntentType.HR) return PolicyDecision.deny("finance_block_hr");
+            if (intent == IntentType.HR) return deny("finance_block_hr", PolicyDecision.Risk.HIGH);
         }
 
         // ENGINEER restrictions
         if (identity.role() == UserRole.ENGINEER) {
-            if (intent == IntentType.HR) return PolicyDecision.deny("engineer_block_hr");
+            if (intent == IntentType.HR) return deny("engineer_block_hr", PolicyDecision.Risk.HIGH);
         }
 
         return allowWithObligations("default_allow", context);
@@ -84,6 +88,8 @@ public class PolicyEngine {
         java.util.List<PolicyObligation> obligations = new java.util.ArrayList<>();
         obligations.add(PolicyObligation.of(PolicyObligation.Type.RECORD_AUDIT));
         obligations.add(PolicyObligation.of(PolicyObligation.Type.INSPECT_OUTPUT));
+        obligations.add(PolicyObligation.outputTokenLimit(800));
+        obligations.add(PolicyObligation.maxCostUsd("0.01"));
         if (context.dataClassification() == DataClassification.CONFIDENTIAL
                 || context.dataClassification() == DataClassification.RESTRICTED) {
             obligations.add(PolicyObligation.of(PolicyObligation.Type.MASK_INPUT));
@@ -94,11 +100,24 @@ public class PolicyEngine {
                 && context.intent().intent() != IntentType.PII) {
             obligations.add(PolicyObligation.of(PolicyObligation.Type.REQUIRE_LOCAL_MODEL));
         }
+        if (context.dataClassification() == DataClassification.RESTRICTED) {
+            obligations.add(PolicyObligation.of(PolicyObligation.Type.DISABLE_MEMORY));
+        }
         if (context.estimatedCostUsd().signum() > 0) {
             obligations.add(new PolicyObligation(PolicyObligation.Type.LIMIT_COST,
                     Map.of("estimatedUsd", context.estimatedCostUsd().toPlainString())));
         }
-        return new PolicyDecision(true, reason, obligations);
+        PolicyDecision.Risk risk = switch (context.dataClassification()) {
+            case PUBLIC -> PolicyDecision.Risk.LOW;
+            case INTERNAL -> PolicyDecision.Risk.MEDIUM;
+            case CONFIDENTIAL -> PolicyDecision.Risk.HIGH;
+            case RESTRICTED -> PolicyDecision.Risk.CRITICAL;
+        };
+        return PolicyDecision.allow(policyVersion, risk, reason, obligations);
+    }
+
+    private PolicyDecision deny(String reason, PolicyDecision.Risk risk) {
+        return PolicyDecision.deny(policyVersion, risk, reason);
     }
 
     private static DataClassification classification(IntentType intent) {

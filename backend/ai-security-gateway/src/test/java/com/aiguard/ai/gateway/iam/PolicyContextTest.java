@@ -53,6 +53,9 @@ class PolicyContextTest {
                 DataClassification.RESTRICTED, null, new BigDecimal("0.05"), Map.of());
         var decision = policy.evaluate(context);
         assertTrue(decision.allowed());
+        assertEquals(PolicyDecision.Effect.ALLOW, decision.effect());
+        assertEquals(PolicyDecision.Risk.CRITICAL, decision.risk());
+        assertEquals("2026-08-23.4", decision.policyVersion());
         Set<PolicyObligation.Type> types = new HashSet<>();
         decision.obligations().forEach(value -> types.add(value.type()));
         assertTrue(types.contains(PolicyObligation.Type.REQUIRE_LOCAL_MODEL));
@@ -60,6 +63,9 @@ class PolicyContextTest {
         assertTrue(types.contains(PolicyObligation.Type.INSPECT_OUTPUT));
         assertTrue(types.contains(PolicyObligation.Type.RECORD_AUDIT));
         assertTrue(types.contains(PolicyObligation.Type.LIMIT_COST));
+        assertTrue(types.contains(PolicyObligation.Type.DISABLE_MEMORY));
+        assertTrue(types.contains(PolicyObligation.Type.LIMIT_OUTPUT_TOKENS));
+        assertTrue(types.contains(PolicyObligation.Type.MAX_COST_USD));
     }
 
     @Test void detectedPiiIsMaskedButDoesNotRequireLocalInference() {

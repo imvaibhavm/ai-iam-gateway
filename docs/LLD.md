@@ -209,7 +209,9 @@ classDiagram
       +estimatedCostUsd BigDecimal
     }
     class PolicyDecision {
-      +allowed boolean
+      +effect Effect
+      +risk Risk
+      +policyVersion String
       +reason String
       +obligations List~PolicyObligation~
     }
@@ -232,6 +234,26 @@ Evaluation order:
 7. Attach masking, inspection, local-model, cost and audit obligations.
 
 Policy outcomes must be deterministic and testable offline. Model output never changes an authorization decision.
+
+Canonical decision example:
+
+```json
+{
+  "effect": "ALLOW",
+  "risk": "MEDIUM",
+  "policyVersion": "2026-08-23.4",
+  "reason": "default_allow",
+  "obligations": [
+    { "type": "MASK_INPUT", "parameters": {} },
+    { "type": "INSPECT_OUTPUT", "parameters": {} },
+    { "type": "DISABLE_MEMORY", "parameters": {} },
+    { "type": "LIMIT_OUTPUT_TOKENS", "parameters": { "tokens": "800" } },
+    { "type": "MAX_COST_USD", "parameters": { "usd": "0.01" } }
+  ]
+}
+```
+
+RAG, model routing, agents, tools, memory and usage controls must consume this contract rather than creating subsystem-specific allow/deny languages.
 
 ## 7. Provider subsystem
 

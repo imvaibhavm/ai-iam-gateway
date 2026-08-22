@@ -8,6 +8,7 @@ import com.aiguard.ai.gateway.guard.pii.*;
 import com.aiguard.ai.gateway.guard.policy.PolicyDecision;
 import com.aiguard.ai.gateway.guard.policy.DataClassification;
 import com.aiguard.ai.gateway.guard.policy.PolicyContext;
+import com.aiguard.ai.gateway.guard.policy.PolicyObligation;
 import com.aiguard.ai.gateway.iam.PolicyEngine;
 import com.aiguard.ai.gateway.iam.entity.AppUser;
 import com.aiguard.ai.gateway.iam.service.AppUserService;
@@ -76,6 +77,7 @@ public class ChatService {
         AuditLog.AuditLogBuilder audit = baseAudit(requestId, identity, user)
                 .intent(classification.intent().name()).confidence(classification.confidence())
                 .allowed(policy.allowed()).decisionReason(policy.reason())
+                .policyVersion(policy.policyVersion())
                 .piiTypes(pii.entities().stream().map(e -> e.type().name()).distinct().collect(Collectors.joining(",")));
         if (!policy.allowed()) { audits.save(audit.build()); return emit(deny(user, classification, policy), streamSink); }
 
@@ -86,7 +88,8 @@ public class ChatService {
         audit.provider(routing.selected().providerId()).model(routing.selected().modelId()).routingReason(routing.reason());
         StringBuilder providerOutput = new StringBuilder();
         try {
-            ModelRequest request = new ModelRequest(requestId, safePrompt, reservation.maxOutputTokens(),
+            ModelRequest request = new ModelRequest(requestId, safePrompt,
+                    outputTokenLimit(policy, reservation.maxOutputTokens()),
                     Map.of("tenantId", identity.tenantId(), "intent", classification.intent().name()));
             var execution = telemetry.observe("ai.model.inference", Map.of("ai.request.id", requestId,
                     "ai.model.provider", routing.selected().providerId(), "ai.model.name", routing.selected().modelId(),
@@ -114,6 +117,14 @@ public class ChatService {
                 .role(user.getRole()).policyVersion(policyVersion);
     }
     private String emit(String text, Consumer<String> sink) { if (sink != null) sink.accept(text); return text; }
+    private int outputTokenLimit(PolicyDecision policy, int reserved) {
+        return policy.obligations().stream()
+                .filter(value -> value.type() == PolicyObligation.Type.LIMIT_OUTPUT_TOKENS)
+                .map(value -> value.parameters().get("tokens"))
+                .filter(Objects::nonNull)
+                .mapToInt(value -> { try { return Integer.parseInt(value); } catch (NumberFormatException ignored) { return reserved; } })
+                .findFirst().stream().map(value -> Math.min(value, reserved)).findFirst().orElse(reserved);
+    }
     private String deny(AppUser user, IntentClassification ic, PolicyDecision decision) {
         return "⛔ Access denied by policy.\n\n• Role: " + user.getRole() + "\n• Intent: " + ic.intent()
                 + "\n• Confidence: " + String.format("%.2f", ic.confidence()) + "\n• Reason: " + decision.reason();
