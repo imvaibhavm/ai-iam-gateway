@@ -434,3 +434,29 @@ bash /Users/vaibhav/Documents/GitHub/ai-iam-gateway/startup.sh
 - **Scripts**: startup.sh, cleanup.sh
 
 ---
+# Provider routing
+
+The security plane routes only after policy evaluation. The default healthy-provider order is:
+
+```text
+Cloudflare Workers AI -> OpenRouter -> Gemini -> Hugging Face -> Ollama
+```
+
+Policy obligations remain authoritative. `REQUIRE_LOCAL_MODEL` excludes every cloud provider and cannot fall back to cloud inference.
+
+Provider configuration is environment-only:
+
+```env
+MODEL_PROVIDER_PRIORITY=cloudflare,openrouter,gemini,huggingface,ollama
+ALLOW_CLOUD_FALLBACK=true
+CLOUDFLARE_API_TOKEN=
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_MODEL=@cf/google/gemma-4-26b-a4b-it
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=openrouter/free
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.6-flash
+HF_TOKEN=
+```
+
+Never place provider credentials in source files, examples, telemetry, audit content, frontend variables, or Git history.

@@ -4,6 +4,7 @@ security:
 
 gateway:
   preferred-provider: ollama
+  provider-priority: ollama
   # Local fallback stays local unless explicitly overridden.
   allow-cloud-fallback: false
 

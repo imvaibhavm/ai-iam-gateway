@@ -25,6 +25,16 @@ class PolicyAwareModelRouterTest {
         var policy = PolicyDecision.allow("restricted", PolicyObligation.of(PolicyObligation.Type.REQUIRE_LOCAL_MODEL));
         assertEquals("ollama", router.select(IntentType.GENERAL, policy).selected().providerId());
     }
+    @Test void selectsProvidersAndFallbacksInConfiguredPriorityOrder() {
+        var router = new PolicyAwareModelRouter(new ProviderRegistry(List.of(
+                provider("huggingface", true), provider("gemini", true), provider("openrouter", true),
+                provider("cloudflare", true), provider("ollama", false))),
+                "cloudflare,openrouter,gemini,huggingface,ollama", true);
+        var decision = router.select(IntentType.GENERAL);
+        assertEquals("cloudflare", decision.selected().providerId());
+        assertEquals(List.of("openrouter", "gemini", "huggingface", "ollama"),
+                decision.fallbacks().stream().map(ModelProvider::providerId).toList());
+    }
     private ModelProvider provider(String id, boolean cloud) {
         return new ModelProvider() {
             public String providerId() { return id; } public String modelId() { return "test"; }

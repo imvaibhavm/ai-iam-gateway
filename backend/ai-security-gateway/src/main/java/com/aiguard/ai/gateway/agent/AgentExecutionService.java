@@ -47,6 +47,9 @@ public class AgentExecutionService {
     public List<AgentApproval> pending(IdentityContext identity) {
         return approvals.findByTenantIdAndStatusOrderByCreatedAtDesc(identity.tenantId(), ApprovalStatus.PENDING);
     }
+    public List<AgentApproval> approvalHistory(IdentityContext identity) {
+        return approvals.findTop100ByTenantIdOrderByCreatedAtDesc(identity.tenantId());
+    }
 
     public AgentApproval decide(String approvalId, boolean approved, IdentityContext decider) {
         AgentApproval approval=approvals.findById(approvalId).orElseThrow(() -> new NoSuchElementException("approval_not_found"));

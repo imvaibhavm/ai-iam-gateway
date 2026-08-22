@@ -10,9 +10,9 @@ from .gateway_client import SecurityPlaneClient
 from .state import AgentState
 
 TOOLS = [
-    ("github.readFile", {"repository": "example/payment-service", "path": "PR #382 diff", "pullRequest": 382}),
-    ("github.searchCode", {"repository": "example/payment-service", "query": "authorization tests", "pullRequest": 382}),
-    ("github.mergePullRequest", {"repository": "example/payment-service", "pullRequest": 382, "reason": "review succeeded"}),
+    ("github.readFile", {"repository": "imvaibhavm/ai-iam-gateway", "repositoryUrl": "https://github.com/imvaibhavm/ai-iam-gateway", "path": "PR #382 diff", "pullRequest": 382}),
+    ("github.searchCode", {"repository": "imvaibhavm/ai-iam-gateway", "repositoryUrl": "https://github.com/imvaibhavm/ai-iam-gateway", "query": "authorization tests", "pullRequest": 382}),
+    ("github.mergePullRequest", {"repository": "imvaibhavm/ai-iam-gateway", "repositoryUrl": "https://github.com/imvaibhavm/ai-iam-gateway", "pullRequest": 382, "reason": "review succeeded"}),
 ]
 
 class SecureAgentGraph:

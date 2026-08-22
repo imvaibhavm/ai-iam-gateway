@@ -32,6 +32,7 @@ public abstract class OpenAiCompatibleProvider implements ModelProvider {
             if (response.statusCode() >= 400) throw new IllegalStateException(id + " HTTP " + response.statusCode());
             JsonNode json = mapper.readTree(response.body());
             String content = json.at("/choices/0/message/content").asText();
+            if (content == null || content.isBlank()) throw new IllegalStateException(id + " returned an empty completion");
             long in = json.at("/usage/prompt_tokens").asLong(0), out = json.at("/usage/completion_tokens").asLong(0);
             return new ModelResponse(content, id, model, in, out, elapsed(start), 0.0);
         } catch (Exception e) { throw new IllegalStateException(id + " invocation failed: " + e.getMessage(), e); }

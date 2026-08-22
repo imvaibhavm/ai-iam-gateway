@@ -40,7 +40,18 @@ type SecuritySummary = {
   byIntent: Record<string, number>;
 };
 type AgentRun = { id:string; requestId:string; tenantId:string; agentId:string; originatingSubject:string; stepCount:number; maxSteps:number; provider?:string; policyResult?:string; status:string };
-type Approval = { id:string; requestId:string; toolName:string; sanitizedArguments:string; reason:string; risk:string };
+type Approval = { id:string; requestId:string; toolName:string; sanitizedArguments:string; reason:string; risk:string; status:string; decidedBy?:string; decidedAt?:string };
+
+function approvalTarget(approval: Approval) {
+  try {
+    const args = JSON.parse(approval.sanitizedArguments) as { repository?: string; repositoryUrl?: string; pullRequest?: number };
+    const repository = args.repository || "imvaibhavm/ai-iam-gateway";
+    const baseUrl = args.repositoryUrl || `https://github.com/${repository}`;
+    return { repository, pullRequest: args.pullRequest, url: args.pullRequest ? `${baseUrl}/pull/${args.pullRequest}` : baseUrl };
+  } catch {
+    return { repository: "imvaibhavm/ai-iam-gateway", pullRequest: undefined, url: "https://github.com/imvaibhavm/ai-iam-gateway" };
+  }
+}
 
 const roles: UserRole[] = ["INTERN", "ENGINEER", "FINANCE", "ADMIN"];
 
@@ -54,6 +65,7 @@ export default function AdminPage() {
   const [securitySummary, setSecuritySummary] = useState<SecuritySummary | null>(null);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [approvalHistory, setApprovalHistory] = useState<Approval[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [loadingAudits, setLoadingAudits] = useState(false);
   const [err, setErr] = useState<string>("");
@@ -140,19 +152,21 @@ export default function AdminPage() {
     const email = getEmailOrRedirect();
     if (!email) return;
     try {
-      const [providerResponse, summaryResponse, runsResponse, approvalsResponse] = await Promise.all([
+      const [providerResponse, summaryResponse, runsResponse, approvalsResponse, approvalHistoryResponse] = await Promise.all([
         fetch(`${backend}/api/admin/providers`, { headers: authHeaders() }),
         fetch(`${backend}/api/admin/security-events/summary`, { headers: authHeaders() }),
         fetch(`${backend}/api/agent/runs`, { headers: authHeaders() }),
         fetch(`${backend}/api/admin/approvals`, { headers: authHeaders() }),
+        fetch(`${backend}/api/admin/approvals/history`, { headers: authHeaders() }),
       ]);
-      if (!providerResponse.ok || !summaryResponse.ok || !runsResponse.ok || !approvalsResponse.ok) {
+      if (!providerResponse.ok || !summaryResponse.ok || !runsResponse.ok || !approvalsResponse.ok || !approvalHistoryResponse.ok) {
         throw new Error("Failed to load security-plane status");
       }
       setProviders(await providerResponse.json());
       setSecuritySummary(await summaryResponse.json());
       setAgentRuns(await runsResponse.json());
       setApprovals(await approvalsResponse.json());
+      setApprovalHistory(await approvalHistoryResponse.json());
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Error");
     }
@@ -272,6 +286,22 @@ export default function AdminPage() {
 
         </div>
 
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
+          <h2 className="text-lg font-semibold mb-4">PR Approval Audit</h2>
+          <div className="overflow-auto"><table className="w-full text-xs">
+            <thead className="text-zinc-400"><tr className="border-b border-zinc-800">
+              {['Request','Repository / PR','Action','Risk','Decision','Decided by'].map(h => <th key={h} className="text-left py-3 pr-3">{h}</th>)}
+            </tr></thead>
+            <tbody>{approvalHistory.map(item => { const target=approvalTarget(item); return <tr key={item.id} className="border-b border-zinc-800/70">
+              <td className="py-3 pr-3 font-mono">{item.requestId}</td>
+              <td className="py-3 pr-3"><a href={target.url} target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">{target.repository}{target.pullRequest ? ` #${target.pullRequest}` : ''}</a></td>
+              <td className="py-3 pr-3">{item.toolName}</td><td className="py-3 pr-3">{item.risk}</td>
+              <td className="py-3 pr-3">{item.status}</td><td className="py-3 pr-3">{item.decidedBy || '—'}</td>
+            </tr>})}</tbody>
+          </table></div>
+          {approvalHistory.length === 0 && <div className="text-zinc-500">No PR approval decisions recorded.</div>}
+        </div>
+
         {err && <div className="mb-6 text-red-400">{err}</div>}
 
         {/* Security plane overview */}
@@ -317,13 +347,17 @@ export default function AdminPage() {
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
           <h2 className="text-lg font-semibold mb-4">Pending Agent Approvals</h2>
           <div className="grid gap-3">
-            {approvals.map((approval) => (
-              <div key={approval.id} className="rounded-xl border border-amber-700/60 bg-zinc-950 p-4">
+            {approvals.map((approval) => {
+              const target = approvalTarget(approval);
+              return <div key={approval.id} className="rounded-xl border border-amber-700/60 bg-zinc-950 p-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <div className="text-amber-400 font-medium">{approval.risk}-risk action</div>
                     <div className="mt-1">{approval.toolName}</div>
                     <div className="text-xs text-zinc-500 mt-1">Request {approval.requestId}</div>
+                    <a href={target.url} target="_blank" rel="noreferrer" className="text-sm text-sky-400 hover:underline mt-2 inline-block">
+                      {target.repository}{target.pullRequest ? ` · PR #${target.pullRequest}` : ""}
+                    </a>
                     <div className="text-sm text-zinc-400 mt-2">{approval.sanitizedArguments}</div>
                   </div>
                   <div className="flex gap-2">
@@ -331,8 +365,8 @@ export default function AdminPage() {
                     <button onClick={() => decideApproval(approval.id, "reject")} className="px-3 py-2 rounded-lg bg-red-800">Reject</button>
                   </div>
                 </div>
-              </div>
-            ))}
+              </div>;
+            })}
             {approvals.length === 0 && <div className="text-zinc-500">No actions are awaiting approval.</div>}
           </div>
         </div>

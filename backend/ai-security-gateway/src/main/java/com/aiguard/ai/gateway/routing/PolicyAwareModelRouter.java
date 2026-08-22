@@ -11,13 +11,16 @@ import java.util.*;
 @Component
 public class PolicyAwareModelRouter {
     private final ProviderRegistry registry;
-    private final String preferred;
+    private final List<String> priority;
     private final boolean allowCloudFallback;
 
     public PolicyAwareModelRouter(ProviderRegistry registry,
-            @Value("${gateway.preferred-provider:huggingface}") String preferred,
+            @Value("${gateway.provider-priority:${gateway.preferred-provider:huggingface}}") String providerPriority,
             @Value("${gateway.allow-cloud-fallback:true}") boolean allowCloudFallback) {
-        this.registry = registry; this.preferred = preferred; this.allowCloudFallback = allowCloudFallback;
+        this.registry = registry;
+        this.priority = Arrays.stream(providerPriority.split(",")).map(String::trim)
+                .filter(value -> !value.isBlank()).map(String::toLowerCase).distinct().toList();
+        this.allowCloudFallback = allowCloudFallback;
     }
 
     public RoutingDecision select(IntentType intent) {
@@ -35,10 +38,15 @@ public class PolicyAwareModelRouter {
                 .toList();
         if (eligible.isEmpty()) throw new IllegalStateException(localOnly
                 ? "Policy requires a healthy local model provider" : "No healthy model provider available");
-        ModelProvider selected = eligible.stream().filter(p -> p.providerId().equalsIgnoreCase(preferred))
-                .findFirst().orElse(eligible.getFirst());
-        List<ModelProvider> fallbacks = eligible.stream().filter(p -> p != selected)
+        List<ModelProvider> ordered = eligible.stream().sorted(Comparator.comparingInt(this::priorityOf)).toList();
+        ModelProvider selected = ordered.getFirst();
+        List<ModelProvider> fallbacks = ordered.stream().filter(p -> p != selected)
                 .filter(p -> allowCloudFallback || !p.cloud()).toList();
-        return new RoutingDecision(selected, localOnly ? "policy_obligation_local_only" : "preferred_healthy_provider", fallbacks);
+        return new RoutingDecision(selected, localOnly ? "policy_obligation_local_only" : "priority_healthy_provider", fallbacks);
+    }
+
+    private int priorityOf(ModelProvider provider) {
+        int index = priority.indexOf(provider.providerId().toLowerCase());
+        return index < 0 ? Integer.MAX_VALUE : index;
     }
 }
