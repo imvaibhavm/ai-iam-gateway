@@ -17,7 +17,7 @@ const AuthContext = createContext<IdentityAuth | null>(null);
 const oidcEnabled = process.env.NEXT_PUBLIC_OIDC_ENABLED === "true";
 const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8080";
 const auth0Audience = process.env.NEXT_PUBLIC_AUTH0_AUDIENCE;
-const oidcScopes = "openid profile email offline_access";
+const oidcScopes = "openid profile email";
 
 function OidcIdentityProvider({ children }: { children: React.ReactNode }) {
   const { isLoading, isAuthenticated, user, getAccessTokenSilently, loginWithRedirect, logout } = useAuth0();
@@ -57,7 +57,7 @@ export function IdentityAuthProvider({ children }: { children: React.ReactNode }
   const domain = process.env.NEXT_PUBLIC_AUTH0_DOMAIN;
   const clientId = process.env.NEXT_PUBLIC_AUTH0_CLIENT_ID;
   if (!domain || !clientId || !auth0Audience) throw new Error("OIDC public configuration is incomplete");
-  return <Auth0Provider domain={domain} clientId={clientId} cacheLocation="memory" useRefreshTokens
+  return <Auth0Provider domain={domain} clientId={clientId} cacheLocation="memory"
     authorizationParams={{
       redirect_uri: process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
       audience: auth0Audience,
