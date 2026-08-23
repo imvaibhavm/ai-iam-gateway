@@ -10,6 +10,9 @@ import java.util.*;
 public class ConfigurableOidcClaimsMapper implements ExternalIdentityClaimsMapper {
     private final String emailClaim;
     private final String groupsClaim;
+    private final String emailVerifiedClaim;
+    private final boolean requireVerifiedEmail;
+    private final OidcUserInfoClient userInfoClient;
     private final Map<String, String> attributeClaims;
 
     public ConfigurableOidcClaimsMapper(
@@ -17,9 +20,15 @@ public class ConfigurableOidcClaimsMapper implements ExternalIdentityClaimsMappe
             @Value("${security.oidc.groups-claim:groups}") String groupsClaim,
             @Value("${security.oidc.tenant-claim:https://aiguard.example/tenant_id}") String tenantClaim,
             @Value("${security.oidc.department-claim:https://aiguard.example/department}") String departmentClaim,
-            @Value("${security.oidc.clearance-claim:https://aiguard.example/clearance}") String clearanceClaim) {
+            @Value("${security.oidc.clearance-claim:https://aiguard.example/clearance}") String clearanceClaim,
+            @Value("${security.oidc.email-verified-claim:email_verified}") String emailVerifiedClaim,
+            @Value("${security.oidc.require-verified-email:true}") boolean requireVerifiedEmail,
+            OidcUserInfoClient userInfoClient) {
         this.emailClaim = emailClaim;
         this.groupsClaim = groupsClaim;
+        this.emailVerifiedClaim = emailVerifiedClaim;
+        this.requireVerifiedEmail = requireVerifiedEmail;
+        this.userInfoClient = userInfoClient;
         this.attributeClaims = Map.of(
                 "assertedTenant", tenantClaim,
                 "department", departmentClaim,
@@ -30,8 +39,20 @@ public class ConfigurableOidcClaimsMapper implements ExternalIdentityClaimsMappe
     @Override
     public ExternalIdentityClaims map(Jwt jwt) {
         String subject = required(jwt.getSubject(), "OIDC subject claim is required");
-        String email = required(stringClaim(jwt, emailClaim), "Configured OIDC email claim is required")
-                .trim().toLowerCase(Locale.ROOT);
+        String email = stringClaim(jwt, emailClaim);
+        Boolean emailVerified = booleanClaim(jwt, emailVerifiedClaim);
+        if (email == null || (requireVerifiedEmail && emailVerified == null)) {
+            OidcUserInfoClient.Profile profile = userInfoClient.fetch(jwt);
+            if (email != null && profile.email() != null && !email.equalsIgnoreCase(profile.email())) {
+                throw new IdentityResolutionException("OIDC email claim does not match UserInfo email");
+            }
+            if (email == null) email = profile.email();
+            emailVerified = profile.emailVerified();
+        }
+        email = required(email, "Verified OIDC email is required").trim().toLowerCase(Locale.ROOT);
+        if (requireVerifiedEmail && !Boolean.TRUE.equals(emailVerified)) {
+            throw new IdentityResolutionException("Verified OIDC email is required");
+        }
         Map<String, String> attributes = new HashMap<>();
         attributeClaims.forEach((target, source) -> {
             String value = stringClaim(jwt, source);
@@ -65,6 +86,13 @@ public class ConfigurableOidcClaimsMapper implements ExternalIdentityClaimsMappe
                     .map(String::trim).filter(v -> !v.isBlank()).toList());
         }
         return Set.of();
+    }
+
+    private static Boolean booleanClaim(Jwt jwt, String name) {
+        if (name == null || name.isBlank()) return null;
+        Object value = jwt.getClaims().get(name);
+        if (value == null) return null;
+        return value instanceof Boolean flag ? flag : Boolean.valueOf(String.valueOf(value));
     }
 
     private static String required(String value, String message) {

@@ -23,6 +23,9 @@ security:
     issuer-uri: ${OIDC_ISSUER_URI:}
     audience: ${OIDC_AUDIENCE:}
     email-claim: ${OIDC_EMAIL_CLAIM:email}
+    email-verified-claim: ${OIDC_EMAIL_VERIFIED_CLAIM:email_verified}
+    require-verified-email: ${OIDC_REQUIRE_VERIFIED_EMAIL:true}
+    userinfo-uri: ${OIDC_USERINFO_URI:}
     groups-claim: ${OIDC_GROUPS_CLAIM:groups}
     tenant-claim: ${OIDC_TENANT_CLAIM:https://aiguard.example/tenant_id}
     department-claim: ${OIDC_DEPARTMENT_CLAIM:https://aiguard.example/department}

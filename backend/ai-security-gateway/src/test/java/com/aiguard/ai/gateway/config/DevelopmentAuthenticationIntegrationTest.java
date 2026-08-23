@@ -49,6 +49,7 @@ class DevelopmentAuthenticationIntegrationTest {
     @Test void externalClaimsCannotElevateRoleAndDisabledUserFailsClosed() throws Exception {
         var external = jwt().jwt(token -> token.issuer("https://tenant.us.auth0.com/")
                 .subject("auth0|intern-1").claim("email", "intern@aiguard.com")
+                .claim("email_verified", true)
                 .claim("role", "ADMIN").claim("groups", java.util.List.of("security-admins"))
                 .claim("https://aiguard.example/tenant_id", "default"));
         mvc.perform(get("/api/user/me").with(external)).andExpect(status().isOk())

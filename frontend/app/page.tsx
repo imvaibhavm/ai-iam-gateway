@@ -14,8 +14,10 @@ type UserRole = "INTERN" | "ENGINEER" | "FINANCE" | "ADMIN";
 export default function Home() {
   const router = useRouter();
   const auth = useIdentityAuth();
+  const { apiFetch, authenticated, loading, oidc, userEmail: oidcUserEmail } = auth;
   const [userEmail, setUserEmail] = useState<string>("");
   const [meRole, setMeRole] = useState<UserRole | null>(null);
+  const [identityError, setIdentityError] = useState("");
 
   const [messages, setMessages] = useState<Msg[]>([
     { role: "assistant", content: "Hi 👋 Ask me anything." },
@@ -28,17 +30,17 @@ export default function Home() {
   useEffect(() => {
     const email = localStorage.getItem("aiguard_user_email") || "";
     const token = localStorage.getItem("aiguard_access_token") || "";
-    if (auth.loading) return;
-    if ((auth.oidc && !auth.authenticated) || (!auth.oidc && (!email || !token))) {
+    if (loading) return;
+    if ((oidc && !authenticated) || (!oidc && (!email || !token))) {
       router.push("/login");
       return;
     }
 
-    setUserEmail(email || "authenticated user");
+    setUserEmail(email || oidcUserEmail || "resolving identity…");
     // ✅ fetch role
     (async () => {
       try {
-        const res = await auth.apiFetch("/user/me");
+        const res = await apiFetch("/user/me");
 
         if (!res.ok) {
           setMeRole(null);
@@ -48,11 +50,13 @@ export default function Home() {
         const me = await res.json();
         setUserEmail(me.email);
         setMeRole(me.role);
-      } catch {
+        setIdentityError("");
+      } catch (cause) {
         setMeRole(null);
+        setIdentityError(cause instanceof Error ? cause.message : "Identity resolution failed");
       }
     })();
-  }, [router, auth]);
+  }, [apiFetch, authenticated, loading, oidc, oidcUserEmail, router]);
 
   const isAdmin = meRole === "ADMIN";
 
@@ -176,6 +180,7 @@ export default function Home() {
             {userEmail ? `Logged in as: ${userEmail}` : "Not logged in"}
             {meRole ? ` • Role: ${meRole}` : ""}
           </div>
+          {identityError && <div className="text-xs text-red-400">Identity error: {identityError}</div>}
         </div>
 
         <div className="flex gap-2">

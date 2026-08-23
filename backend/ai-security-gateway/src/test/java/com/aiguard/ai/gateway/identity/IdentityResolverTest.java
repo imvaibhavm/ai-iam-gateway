@@ -15,7 +15,8 @@ import static org.mockito.Mockito.*;
 
 class IdentityResolverTest {
     private final ConfigurableOidcClaimsMapper mapper = new ConfigurableOidcClaimsMapper(
-            "email", "groups", "tenant", "department", "clearance");
+            "email", "groups", "tenant", "department", "clearance", "email_verified", true,
+            mock(OidcUserInfoClient.class));
     private final AppUserService users = mock(AppUserService.class);
 
     @Test void resolvesExternalClaimsButUsesAuthoritativeDatabaseRoleAndTenant() {
@@ -24,6 +25,7 @@ class IdentityResolverTest {
         IdentityResolver resolver = new IdentityResolver(mapper, users, false, "dev");
         Jwt jwt = jwt("https://issuer.example/", "oidc|7")
                 .claim("email", "Person@Example.com").claim("tenant", "tenant-a")
+                .claim("email_verified", true)
                 .claim("role", "ADMIN").claim("groups", List.of("engineering"))
                 .claim("department", "product").build();
 

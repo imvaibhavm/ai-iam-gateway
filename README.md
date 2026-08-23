@@ -29,7 +29,7 @@ The browser never supplies an authoritative role, tenant, clearance, groups, or 
 5. Configure Allowed Web Origins with the same origins.
 6. Enable Refresh Token Rotation if `offline_access` is used.
 7. The frontend requests `openid profile email offline_access`. Add API permissions/scopes only when the backend actually enforces them.
-8. Ensure the API access token contains the configured email claim. Optional Auth0 Actions may add namespaced claims for tenant, department and clearance, plus a configurable groups claim. Example names are in [.env.example](.env.example). Never map an Auth0 role directly to application access.
+8. Enable the API's offline access when the SPA requests `offline_access`. If a custom-API access token omits `email`, the backend resolves it from the provider's OIDC UserInfo endpoint and verifies that UserInfo returns the same `sub`; unverified or conflicting email identities fail closed. Optional Auth0 Actions may add namespaced claims for tenant, department and clearance, plus a configurable groups claim. Never map an Auth0 role directly to application access.
 9. Pre-provision the person in `app_users`. On first validated login, an unambiguous email match is bound to `(external_issuer, external_subject)`; later requests use that durable binding. Run [`V3__oidc_external_identity.sql`](infra/migrations/V3__oidc_external_identity.sql) before deployment when schema auto-update is disabled.
 
 Backend:
@@ -39,6 +39,9 @@ SPRING_PROFILES_ACTIVE=demo
 OIDC_ENABLED=true
 OIDC_ISSUER_URI=https://YOUR_TENANT.us.auth0.com/
 OIDC_AUDIENCE=https://api.aiguard.example
+OIDC_USERINFO_URI=https://YOUR_TENANT.us.auth0.com/userinfo
+OIDC_EMAIL_VERIFIED_CLAIM=email_verified
+OIDC_REQUIRE_VERIFIED_EMAIL=true
 DEV_TOKEN_ENABLED=false
 CORS_ALLOWED_ORIGINS=https://YOUR_FRONTEND.example
 ```
