@@ -34,8 +34,13 @@ public class IdentityResolver {
             return resolveDevelopment(jwt);
         }
 
-        ExternalIdentityClaims claims = externalClaimsMapper.map(jwt);
-        AppUser user = users.resolveExternal(claims);
+        String issuer = jwt.getIssuer() == null ? null : jwt.getIssuer().toString();
+        Optional<AppUser> bound = users.findBoundExternal(issuer, jwt.getSubject());
+        ExternalIdentityClaims claims = bound.isPresent()
+                ? externalClaimsMapper.mapBound(jwt)
+                : externalClaimsMapper.map(jwt);
+        AppUser user = bound.orElseGet(() -> users.resolveExternal(claims));
+        if (!user.isEnabled()) throw new IdentityResolutionException("Local user is disabled");
         Map<String, String> attributes = new HashMap<>(claims.attributes());
         attributes.remove("assertedTenant");
         return new IdentityContext(claims.subject(), user.getEmail(), user.getTenantId(), user.getRole(),

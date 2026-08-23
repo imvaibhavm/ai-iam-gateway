@@ -38,10 +38,19 @@ public class ConfigurableOidcClaimsMapper implements ExternalIdentityClaimsMappe
 
     @Override
     public ExternalIdentityClaims map(Jwt jwt) {
+        return map(jwt, true);
+    }
+
+    @Override
+    public ExternalIdentityClaims mapBound(Jwt jwt) {
+        return map(jwt, false);
+    }
+
+    private ExternalIdentityClaims map(Jwt jwt, boolean requireBootstrapEmail) {
         String subject = required(jwt.getSubject(), "OIDC subject claim is required");
         String email = stringClaim(jwt, emailClaim);
         Boolean emailVerified = booleanClaim(jwt, emailVerifiedClaim);
-        if (email == null || (requireVerifiedEmail && emailVerified == null)) {
+        if (requireBootstrapEmail && (email == null || (requireVerifiedEmail && emailVerified == null))) {
             OidcUserInfoClient.Profile profile = userInfoClient.fetch(jwt);
             if (email != null && profile.email() != null && !email.equalsIgnoreCase(profile.email())) {
                 throw new IdentityResolutionException("OIDC email claim does not match UserInfo email");
@@ -49,8 +58,11 @@ public class ConfigurableOidcClaimsMapper implements ExternalIdentityClaimsMappe
             if (email == null) email = profile.email();
             emailVerified = profile.emailVerified();
         }
-        email = required(email, "Verified OIDC email is required").trim().toLowerCase(Locale.ROOT);
-        if (requireVerifiedEmail && !Boolean.TRUE.equals(emailVerified)) {
+        if (email != null) email = email.trim().toLowerCase(Locale.ROOT);
+        if (requireBootstrapEmail && (email == null || email.isBlank())) {
+            throw new IdentityResolutionException("Verified OIDC email is required");
+        }
+        if (requireBootstrapEmail && requireVerifiedEmail && !Boolean.TRUE.equals(emailVerified)) {
             throw new IdentityResolutionException("Verified OIDC email is required");
         }
         Map<String, String> attributes = new HashMap<>();

@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
 import com.aiguard.ai.gateway.identity.ExternalIdentityClaims;
 import com.aiguard.ai.gateway.identity.IdentityResolutionException;
 
@@ -50,6 +51,11 @@ public class AppUserService {
             throw new IdentityResolutionException("OIDC tenant claim does not match authoritative local tenant");
         }
         return user;
+    }
+
+    public Optional<AppUser> findBoundExternal(String issuer, String subject) {
+        if (issuer == null || issuer.isBlank() || subject == null || subject.isBlank()) return Optional.empty();
+        return repo.findByExternalIssuerAndExternalSubject(issuer, subject);
     }
 
     public AppUser requireEnabled(String tenantId, String email) {

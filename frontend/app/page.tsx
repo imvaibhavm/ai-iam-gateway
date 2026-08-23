@@ -44,7 +44,10 @@ export default function Home() {
 
         if (!res.ok) {
           setMeRole(null);
-          router.push("/login"); return;
+          setIdentityError(res.status === 403
+            ? "Authenticated by Auth0, but this identity has no enabled local access mapping."
+            : `Identity service returned ${res.status}.`);
+          return;
         }
 
         const me = await res.json();
