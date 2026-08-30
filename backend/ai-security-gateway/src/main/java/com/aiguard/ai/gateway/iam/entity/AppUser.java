@@ -37,4 +37,13 @@ public class AppUser {
 
     @Column(nullable = false)
     private boolean enabled;
+
+    // Server-authoritative ABAC attributes. External claims may supply identity input,
+    // but locally administered values take precedence when present.
+    private String department;
+    private String clearance;
+    private String region;
+
+    @Column(name = "policy_assignments", length = 2000)
+    private String policyAssignments;
 }

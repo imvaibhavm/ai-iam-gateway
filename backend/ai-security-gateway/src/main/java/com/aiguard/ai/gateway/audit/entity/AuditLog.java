@@ -6,7 +6,7 @@ import lombok.*;
 import java.time.Instant;
 
 @Entity
-@Table(name = "audit_log")
+@Table(name = "audit_log", indexes = @Index(name = "ix_audit_tenant_ts", columnList = "tenant_id,ts"))
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor @Builder
 public class AuditLog {

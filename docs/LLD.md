@@ -1,4 +1,6 @@
-# AI Security Gateway — Low-Level Design
+# Friday AI Security Control Plane — Low-Level Design
+
+> Implementation baseline: 27 August 2026.
 
 ## 1. Component map
 
@@ -118,6 +120,21 @@ Identity invariants:
 5. Every child delegation scope set must be a subset of its parent.
 6. Cross-tenant delegation is denied.
 
+### Hosted OIDC resolution
+
+```text
+Bearer access token
+  -> Spring signature/expiry/issuer/audience validation
+  -> lookup durable (issuer, subject) binding
+  -> if bound: load authoritative local user directly
+  -> if unbound: configured email/UserInfo bootstrap
+  -> require exactly one enabled local user
+  -> persist durable binding
+  -> construct IdentityContext
+```
+
+For an already-bound subject, mutable email claims are not used as the authorization key. For first-login bootstrap, UserInfo must return the same `sub` as the validated access token. Database tenant, role and enabled state always override external assertions.
+
 ## 4. Direct-chat API
 
 ### `POST /api/chat`
@@ -151,7 +168,7 @@ The current implementation extracts the final user message. A future conversatio
 
 ```text
 identity = IdentityResolver.require(authentication)
-user = AppUserService.getOrCreate(identity.tenant, identity.email, identity.role)
+user = AppUserService.requireEnabled(identity.tenant, identity.email)
 rateLimit.check(identity.tenant, identity.subject)
 
 pii = RegexPiiDetector.detectAndMask(message)
@@ -487,6 +504,19 @@ JWT_SECRET=
 JWT_ISSUER=ai-security-gateway
 DEV_TOKEN_ENABLED=false
 
+OIDC_ENABLED=true
+OIDC_ISSUER_URI=https://YOUR_TENANT.example/
+OIDC_AUDIENCE=https://api.example
+OIDC_USERINFO_URI=https://YOUR_TENANT.example/userinfo
+OIDC_EMAIL_CLAIM=email
+OIDC_EMAIL_VERIFIED_CLAIM=email_verified
+OIDC_REQUIRE_VERIFIED_EMAIL=true
+OIDC_GROUPS_CLAIM=groups
+OIDC_TENANT_CLAIM=https://aiguard.example/tenant_id
+OIDC_DEPARTMENT_CLAIM=https://aiguard.example/department
+OIDC_CLEARANCE_CLAIM=https://aiguard.example/clearance
+CORS_ALLOWED_ORIGINS=https://YOUR_FRONTEND.example
+
 MODEL_PROVIDER_PRIORITY=cloudflare,openrouter,gemini,huggingface,ollama
 ALLOW_CLOUD_FALLBACK=true
 DEFAULT_TOKEN_BUDGET=512
@@ -530,9 +560,33 @@ All values that authenticate or authorize access are server-side secrets and mus
 ## 15. Known implementation gaps
 
 1. Direct chat does not yet pass bounded multi-turn history to `ModelProvider`.
-2. SSE output is buffered until output inspection completes; it is not token-by-token client delivery.
-3. Ollama needs an active connectivity health probe.
-4. Provider health currently validates configuration more than remote inference readiness.
+2. SSE can release provider chunks before final inspection; incremental rolling-buffer DLP or risk-based full buffering is required.
+3. Providers need scheduled connectivity/capability health probes and persisted circuit state.
+4. Provider selection does not yet optimize across region, capability, measured quality, cost and latency.
 5. GitHub execution is mock-only.
-6. Development email JWT login must be disabled when production OIDC is configured.
-7. The agent-runtime deployment and durable LangGraph checkpoint store need production deployment configuration.
+6. Development email JWT login must remain disabled in hosted/production OIDC profiles.
+7. The agent runtime uses a single-runtime SQLite LangGraph checkpointer; a production PostgreSQL checkpointer and runtime HA are required.
+8. `DISABLE_MEMORY` is represented as an obligation but no production memory subsystem enforces it yet.
+9. RAG ACL filtering, real MCP credential vending, tamper-evident audit and packaged VPC/on-prem enforcement nodes are not implemented.
+
+## 16. Administration and MCP governance
+
+The admin UI has two primary information surfaces:
+
+- **Dashboard** — tenant KPIs, model availability, agent activity, approval decisions, MCP availability and user access administration.
+- **Logs** — the tenant-scoped, authoritative request decision table.
+
+`GET /api/admin/audit/metrics?period=24h|7d|30d` reads at most 10,000 audit records for the authenticated administrator's tenant and returns allow/deny totals, PII counts, output redactions and time buckets. The database index `ix_audit_tenant_ts` supports this access path.
+
+`POST /api/admin/users/import` accepts at most 250 reviewed users. Email, role, attribute length, policy syntax and duplicate emails are validated before `saveAll`. The request cannot specify the tenant. Locally administered department, clearance, region and policy assignments override external attributes when building `IdentityContext`.
+
+The MCP catalog has two enforcement levels:
+
+```text
+Tenant administrator enables catalog item
+        -> user may opt in
+        -> agent request may name only opted-in items
+        -> Tool Gateway/PDP remains authoritative at execution time
+```
+
+`mcp_provider_settings` stores tenant availability and `user_mcp_settings` stores user selection. These records do not contain provider credentials. Current catalog entries are integration foundations; real external transports, OAuth and scoped credential vending remain separate production work.

@@ -1,4 +1,6 @@
-# AI Security Gateway — HLD and LLD
+# Friday AI Security Control Plane — HLD and LLD
+
+> Architecture baseline: 27 August 2026. This document describes the implemented repository, not every roadmap capability.
 
 ## Scope and architectural ownership
 
@@ -67,13 +69,16 @@ flowchart LR
     IdP[Generic OIDC Provider] -->|Authorization Code + PKCE| SPA[Next.js SPA]
     SPA -->|Bearer access token| ResourceServer[Spring Security Resource Server]
     ResourceServer -->|signature + expiry + issuer + audience valid| Mapper[Configurable claims mapper]
-    Mapper --> Resolver[IdentityResolver]
+    Mapper --> UserInfo[Configured OIDC UserInfo fallback]
+    UserInfo --> Resolver[IdentityResolver]
     Resolver --> Users[(PostgreSQL / Neon app_users)]
     Users -->|authoritative tenant, enabled, role| Context[IdentityContext]
     Context --> PDP[ABAC / ReBAC / PDP]
 ```
 
-OIDC claims provide authenticated identity attributes, not authorization decisions. The first hosted login binds one pre-provisioned, unambiguous email record to the validated `(issuer, subject)`. Cross-tenant assertions, disabled users and unknown mappings fail closed. Production SPA access tokens remain in SDK-managed memory and are never persisted by this application.
+OIDC claims provide authenticated identity attributes, not authorization decisions. Spring validates signature, expiry, issuer and configured audience before application code sees the JWT. `IdentityResolver` first resolves a durable `(issuer, subject)` binding. For an unbound identity, the configured email claim or OIDC UserInfo endpoint may bootstrap exactly one pre-provisioned local user; UserInfo `sub` must match the JWT. The database remains authoritative for tenant, enabled status and role. Cross-tenant assertions, disabled users, conflicting identities and unknown mappings fail closed. Production SPA access tokens remain in SDK-managed memory and are never persisted by this application.
+
+The hosted demo may set `OIDC_REQUIRE_VERIFIED_EMAIL=false` for synthetic pre-provisioned `@aiguard.com` accounts. Production defaults to `true`; real deployments should require verified email for bootstrap or provision explicit subject bindings administratively.
 
 Production provider priority is `cloudflare, openrouter, gemini, huggingface, ollama`. Only healthy, policy-eligible providers participate. Local-only obligations exclude every cloud provider. Local development explicitly uses Ollama first.
 
@@ -215,6 +220,8 @@ erDiagram
       string email
       string role
       boolean enabled
+      string external_issuer
+      string external_subject
     }
     AUDIT_LOG {
       string id PK
@@ -303,11 +310,15 @@ Safe correlation fields are `requestId`, `traceId` and `tenantId`. Trace identif
 - Provider keys remain server-side environment secrets.
 - PostgreSQL failure prevents authoritative audit-dependent operations from silently succeeding.
 
-## Current limitations
+## Current implementation boundaries
 
+- The admin workspace now separates operational dashboards from authoritative request logs. Dashboard KPIs are calculated from tenant-scoped PostgreSQL audit records for 24-hour, 7-day and 30-day windows.
+- The MCP catalog implements tenant-admin availability and per-user opt-in. Catalog status does not imply that an external OAuth credential or production MCP transport has been configured.
+- Bulk user import accepts role, enabled state, bounded ABAC attributes and explicit policy assignments. The authenticated administrator's tenant is always assigned server-side.
 - The direct chat UI sends only the latest user message; full multi-turn conversation history is not yet forwarded to providers.
-- The SSE endpoint buffers provider output for final inspection, so the browser request remains pending until the inspected response is emitted.
-- Ollama health currently reflects configuration rather than a remote connectivity probe.
+- The SSE path can forward provider chunks before final whole-response inspection. A rolling-buffer incremental DLP release gate is still required before claiming leak-safe token streaming.
+- Provider health primarily reflects adapter configuration/readiness; scheduled remote probes, persisted circuit state and quality/cost statistics are not yet implemented.
 - GitHub tools are deterministic mocks; a production GitHub App adapter and scoped installation token are still required.
-- The development email-token endpoint is not production authentication and must be replaced by OIDC.
+- Hosted Auth0 OIDC is implemented. Development tokens remain available only behind `DEV_TOKEN_ENABLED=true`, and OIDC/dev modes are mutually exclusive.
 - LangSmith export is optional and must not be treated as the audit system of record.
+- RAG document/chunk authorization, production memory enforcement, real MCP credential vending, tamper-evident audit and packaged customer VPC/on-prem deployments remain roadmap work.

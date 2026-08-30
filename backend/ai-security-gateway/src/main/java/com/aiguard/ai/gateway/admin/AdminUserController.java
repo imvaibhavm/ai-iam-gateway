@@ -30,6 +30,13 @@ public class AdminUserController {
         return userService.upsertUser(identityResolver.require(auth).tenantId(), req.email(), req.role(), enabled);
     }
 
+    @PostMapping("/import")
+    public BulkImportResponse importUsers(@RequestBody BulkImportRequest request, Authentication auth) {
+        List<AppUser> users = userService.importUsers(identityResolver.require(auth).tenantId(),
+                request == null ? null : request.users());
+        return new BulkImportResponse(users.size(), users);
+    }
+
     @PutMapping("/{email}/role/{role}")
     public AppUser updateRole(@PathVariable String email, @PathVariable String role, Authentication auth) {
         return userService.updateRole(identityResolver.require(auth).tenantId(), email, UserRole.valueOf(role.toUpperCase()));
@@ -39,4 +46,8 @@ public class AdminUserController {
     public AppUser updateEnabled(@PathVariable String email, @PathVariable boolean enabled, Authentication auth) {
         return userService.updateEnabled(identityResolver.require(auth).tenantId(), email, enabled);
     }
+
+
+    public record BulkImportRequest(List<AppUserService.BulkUserDefinition> users) { }
+    public record BulkImportResponse(int imported, List<AppUser> users) { }
 }

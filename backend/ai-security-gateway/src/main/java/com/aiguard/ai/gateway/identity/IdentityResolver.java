@@ -43,6 +43,10 @@ public class IdentityResolver {
         if (!user.isEnabled()) throw new IdentityResolutionException("Local user is disabled");
         Map<String, String> attributes = new HashMap<>(claims.attributes());
         attributes.remove("assertedTenant");
+        putAuthoritative(attributes, "department", user.getDepartment());
+        putAuthoritative(attributes, "clearance", user.getClearance());
+        putAuthoritative(attributes, "region", user.getRegion());
+        putAuthoritative(attributes, "policyAssignments", user.getPolicyAssignments());
         return new IdentityContext(claims.subject(), user.getEmail(), user.getTenantId(), user.getRole(),
                 IdentityType.HUMAN, null, scopes(jwt), claims.groups(), attributes);
     }
@@ -88,6 +92,10 @@ public class IdentityResolver {
 
     private void copyClaim(Jwt jwt, Map<String, String> target, String name) {
         String value = jwt.getClaimAsString(name);
+        if (value != null && !value.isBlank()) target.put(name, value);
+    }
+
+    private void putAuthoritative(Map<String, String> target, String name, String value) {
         if (value != null && !value.isBlank()) target.put(name, value);
     }
 }

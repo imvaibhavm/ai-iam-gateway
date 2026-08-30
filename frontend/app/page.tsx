@@ -10,6 +10,8 @@ type Msg = {
 };
 
 type UserRole = "INTERN" | "ENGINEER" | "FINANCE" | "ADMIN";
+type WorkspaceMode = "chat" | "agent" | "tools";
+type McpProvider = { id:string; name:string; category:string; description:string; requiredScope:string; tenantEnabled:boolean; userEnabled:boolean; connectionStatus:string };
 
 export default function Home() {
   const router = useRouter();
@@ -24,7 +26,10 @@ export default function Home() {
   ]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
-  const [agentMode, setAgentMode] = useState(false);
+  const [mode, setMode] = useState<WorkspaceMode>("chat");
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
+  const [toolPanelOpen, setToolPanelOpen] = useState(false);
+  const [mcpProviders, setMcpProviders] = useState<McpProvider[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,6 +59,8 @@ export default function Home() {
         setUserEmail(me.email);
         setMeRole(me.role);
         setIdentityError("");
+        const mcpResponse = await apiFetch("/mcp/providers");
+        if (mcpResponse.ok) setMcpProviders(await mcpResponse.json());
       } catch (cause) {
         setMeRole(null);
         setIdentityError(cause instanceof Error ? cause.message : "Identity resolution failed");
@@ -88,11 +95,17 @@ export default function Home() {
     };
 
     try {
-      if (agentMode) {
+      if (mode !== "chat") {
+        const selectedTools = mcpProviders.filter(provider => provider.tenantEnabled && provider.userEnabled).map(provider => provider.id);
         const response = await auth.apiFetch("/agent/runs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: trimmed, agentId: "pr-review-agent", maxSteps: 8 }),
+          body: JSON.stringify({
+            prompt: trimmed,
+            agentId: mode === "tools" ? "tool-assisted-agent" : "pr-review-agent",
+            maxSteps: 8,
+            requestedTools: selectedTools,
+          }),
         });
         if (!response.ok) throw new Error("Agent execution failed safely");
         const run = await response.json();
@@ -168,6 +181,14 @@ export default function Home() {
     }
   }
 
+  async function toggleMcp(provider: McpProvider) {
+    if (!provider.tenantEnabled) return;
+    const response = await auth.apiFetch(`/mcp/providers/${provider.id}/enabled/${!provider.userEnabled}`, { method: "PUT" });
+    if (!response.ok) return;
+    const updated = await response.json();
+    setMcpProviders(current => current.map(item => item.id === updated.id ? updated : item));
+  }
+
   function logout() {
     localStorage.removeItem("aiguard_user_email");
     localStorage.removeItem("aiguard_access_token");
@@ -178,7 +199,7 @@ export default function Home() {
     <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
       <header className="p-4 border-b border-zinc-800 flex items-center justify-between">
         <div className="flex flex-col">
-          <div className="text-lg font-semibold">AI Security Gateway Chat (POC)</div>
+          <div className="flex items-center gap-2"><span className="h-7 w-7 rounded-lg bg-gradient-to-br from-cyan-300 to-emerald-400 text-zinc-950 flex items-center justify-center text-xs font-black">F</span><span className="text-lg font-semibold">Friday Workspace</span></div>
           <div className="text-xs text-zinc-400">
             {userEmail ? `Logged in as: ${userEmail}` : "Not logged in"}
             {meRole ? ` • Role: ${meRole}` : ""}
@@ -222,16 +243,24 @@ export default function Home() {
         <div ref={bottomRef} />
       </main>
 
-      <footer className="p-4 border-t border-zinc-800 flex gap-2">
-        <button onClick={() => setAgentMode(!agentMode)}
-          className={`px-4 py-3 rounded-xl border ${agentMode ? "border-amber-500 text-amber-300" : "border-zinc-700 text-zinc-400"}`}>
-          {agentMode ? "Agent" : "Chat"}
-        </button>
+      {toolPanelOpen && <div className="border-t border-zinc-800 bg-zinc-950 px-4 py-4">
+        <div className="mx-auto max-w-5xl"><div className="flex items-start justify-between gap-4 mb-4"><div><div className="text-sm font-semibold">Available tool connections</div><div className="text-xs text-zinc-500 mt-1">You can enable only connections approved by your workspace administrator.</div></div><button onClick={()=>setToolPanelOpen(false)} className="text-xs text-zinc-500 hover:text-white">Close</button></div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{mcpProviders.map(provider=><button key={provider.id} disabled={!provider.tenantEnabled} onClick={()=>void toggleMcp(provider)} className={`rounded-xl border p-3 text-left transition ${provider.userEnabled?'border-emerald-400/30 bg-emerald-400/[0.07]':provider.tenantEnabled?'border-zinc-800 bg-zinc-900 hover:border-zinc-700':'border-zinc-900 bg-zinc-950 opacity-45'}`}><div className="flex justify-between gap-2"><span className="text-sm font-medium">{provider.name}</span><span className={`h-2 w-2 mt-1 rounded-full ${provider.userEnabled?'bg-emerald-400':'bg-zinc-700'}`}/></div><div className="mt-1 text-[10px] text-zinc-600">{provider.tenantEnabled?(provider.userEnabled?'Enabled for you':'Available to enable'):'Not approved by admin'}</div></button>)}</div>
+        </div>
+      </div>}
+
+      <footer className="p-4 border-t border-zinc-800 flex gap-2 bg-zinc-950/95">
+        <div className="relative">
+          <button onClick={() => setModeMenuOpen(value=>!value)} className={`min-w-24 px-4 py-3 rounded-xl border flex items-center justify-between gap-3 ${mode==='chat'?'border-zinc-700 text-zinc-300':mode==='agent'?'border-amber-500/50 text-amber-300':'border-emerald-500/50 text-emerald-300'}`}><span className="capitalize">{mode}</span><span className="text-[10px]">⌃</span></button>
+          {modeMenuOpen && <div className="absolute bottom-full left-0 mb-2 w-72 overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl"><div className="p-2">{[
+            ['chat','Chat','Ask a model through Friday security controls.'],['agent','Create agent task','Run a governed multi-step workflow.'],['tools','Call tools','Let an agent propose approved tool actions.']
+          ].map(([id,label,description])=><button key={id} onClick={()=>{setMode(id as WorkspaceMode);setModeMenuOpen(false);if(id==='tools')setToolPanelOpen(true)}} className={`w-full rounded-lg p-3 text-left hover:bg-zinc-800 ${mode===id?'bg-zinc-800':''}`}><div className="text-sm font-medium">{label}</div><div className="mt-1 text-[11px] leading-relaxed text-zinc-500">{description}</div></button>)}</div><button onClick={()=>{setModeMenuOpen(false);setToolPanelOpen(true)}} className="w-full border-t border-zinc-800 px-4 py-3 text-left text-xs text-cyan-300">Manage my tool connections →</button></div>}
+        </div>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          placeholder={agentMode ? "Review PR #382 and merge it if everything looks fine." : "Type your message..."}
+          placeholder={mode === "agent" ? "Review change #382 and merge it if everything looks safe." : mode === "tools" ? "Search the approved tools for the information I need…" : "Type your message..."}
           className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 outline-none"
           disabled={!userEmail}
         />

@@ -5,8 +5,10 @@ import com.aiguard.ai.gateway.iam.entity.AppUser;
 import com.aiguard.ai.gateway.iam.repo.AppUserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import com.aiguard.ai.gateway.identity.ExternalIdentityClaims;
 import com.aiguard.ai.gateway.identity.IdentityResolutionException;
@@ -97,6 +99,39 @@ public class AppUserService {
         return repo.save(user);
     }
 
+    @Transactional
+    public List<AppUser> importUsers(String tenantId, List<BulkUserDefinition> definitions) {
+        if (definitions == null || definitions.isEmpty()) throw new IllegalArgumentException("users are required");
+        if (definitions.size() > 250) throw new IllegalArgumentException("a maximum of 250 users may be imported at once");
+        String tenant = normalizeTenant(tenantId);
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        List<AppUser> imported = new java.util.ArrayList<>();
+        for (BulkUserDefinition definition : definitions) {
+            if (definition == null || definition.role() == null) throw new IllegalArgumentException("every user requires a role");
+            String email = normalizeEmail(definition.email());
+            if (!email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) throw new IllegalArgumentException("invalid email: " + email);
+            if (!seen.add(email)) throw new IllegalArgumentException("duplicate email in import: " + email);
+            AppUser user = repo.findById(key(tenant, email)).orElseGet(() -> AppUser.builder()
+                    .id(key(tenant, email)).tenantId(tenant).email(email).build());
+            user.setRole(definition.role());
+            user.setEnabled(definition.enabled() == null || definition.enabled());
+            Map<String, String> attributes = definition.attributes() == null ? Map.of() : definition.attributes();
+            user.setDepartment(clean(attributes.get("department")));
+            user.setClearance(clean(attributes.get("clearance")));
+            user.setRegion(clean(attributes.get("region")));
+            if (definition.policies() != null && definition.policies().size() > 50) throw new IllegalArgumentException("a user may have at most 50 policy assignments");
+            user.setPolicyAssignments(definition.policies() == null ? null : definition.policies().stream()
+                    .filter(java.util.Objects::nonNull).map(String::trim).filter(value -> !value.isBlank())
+                    .peek(value -> { if (!value.matches("[A-Za-z0-9._:-]{1,80}")) throw new IllegalArgumentException("invalid policy assignment"); })
+                    .distinct().sorted().collect(java.util.stream.Collectors.joining(",")));
+            imported.add(user);
+        }
+        return repo.saveAll(imported);
+    }
+
+    public record BulkUserDefinition(String email, UserRole role, Boolean enabled,
+                                     Map<String, String> attributes, List<String> policies) { }
+
     public AppUser updateRole(String tenantId, String email, UserRole role) {
         AppUser user = repo.findById(key(normalizeTenant(tenantId), normalizeEmail(email))).orElseThrow();
         user.setRole(role);
@@ -112,4 +147,10 @@ public class AppUserService {
     private String normalizeTenant(String tenantId) { return tenantId == null || tenantId.isBlank() ? "default" : tenantId.trim().toLowerCase(); }
     private String normalizeEmail(String email) { if (email == null || email.isBlank()) throw new IllegalArgumentException("email required"); return email.trim().toLowerCase(); }
     private String key(String tenantId, String email) { return tenantId + "|" + email; }
+    private String clean(String value) {
+        if (value == null || value.isBlank()) return null;
+        String cleaned = value.trim();
+        if (cleaned.length() > 120) throw new IllegalArgumentException("attribute values must be 120 characters or fewer");
+        return cleaned;
+    }
 }
